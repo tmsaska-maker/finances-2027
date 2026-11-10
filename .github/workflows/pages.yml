@@ -1,54 +1,42 @@
-name: Publish Figma Preview
+name: Build Finances 2027 for Lightsail
 on:
   push:
     branches: [main]
     paths:
-      - "figma-bootstrap.zip"
-      - "src/**"
-      - "vite.config.ts"
-      - "index.html"
+      - "finances2027-figma-ui.zip"
       - "package.json"
+      - "vite.config.ts"
+      - "tsconfig.json"
+      - "src/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Restore approved Figma Make interface
-        run: |
-          if [ -f figma-bootstrap.zip ]; then
-            unzip -o -q figma-bootstrap.zip src/App.tsx src/index.css
-          fi
-          test -s src/App.tsx || { echo "::error::Missing approved Figma App.tsx. Upload figma-bootstrap.zip to main."; exit 1; }
-          test -s src/index.css || { echo "::error::Missing approved Figma index.css. Upload figma-bootstrap.zip to main."; exit 1; }
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
+      - name: Restore approved Figma UI
+        run: |
+          test -s finances2027-figma-ui.zip
+          unzip -o -q finances2027-figma-ui.zip src/App.tsx src/index.css
+          test -s src/App.tsx
+          test -s src/index.css
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Build demo UI
+      - name: Build UI
         run: npm run build
-      - name: Set up GitHub Pages
-        uses: actions/configure-pages@v5
-      - name: Upload static site
-        uses: actions/upload-pages-artifact@v3
+      - name: Pack static website
+        run: tar -czf finances2027-dist.tar.gz -C dist .
+      - name: Upload build
+        uses: actions/upload-artifact@v4
         with:
-          path: "./dist"
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          name: finances2027-dist
+          path: finances2027-dist.tar.gz
+          retention-days: 30
