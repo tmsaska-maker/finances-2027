@@ -1,0 +1,54 @@
+name: Publish Figma Preview
+on:
+  push:
+    branches: [main]
+    paths:
+      - "figma-bootstrap.zip"
+      - "src/**"
+      - "vite.config.ts"
+      - "index.html"
+      - "package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Restore approved Figma Make interface
+        run: |
+          if [ -f figma-bootstrap.zip ]; then
+            unzip -o -q figma-bootstrap.zip src/App.tsx src/index.css
+          fi
+          test -s src/App.tsx || { echo "::error::Missing approved Figma App.tsx. Upload figma-bootstrap.zip to main."; exit 1; }
+          test -s src/index.css || { echo "::error::Missing approved Figma index.css. Upload figma-bootstrap.zip to main."; exit 1; }
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build demo UI
+        run: npm run build
+      - name: Set up GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./dist"
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
