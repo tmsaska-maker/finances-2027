@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -47,3 +47,11 @@ jobs:
           name: finances2027-dist
           path: finances2027-dist.tar.gz
           retention-days: 30
+      - name: Publish static site branch for Lightsail
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: site
+          publish_dir: ./dist
+          force_orphan: true
+          commit_message: 'deploy: Figma 2027 static site'
