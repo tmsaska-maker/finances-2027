@@ -25,7 +25,10 @@ jobs:
       - name: Restore approved Figma UI
         run: |
           test -s finances2027-figma-ui.zip
-          unzip -o -q finances2027-figma-ui.zip src/App.tsx src/index.css
+          file finances2027-figma-ui.zip
+          unzip -l finances2027-figma-ui.zip
+          unzip -o finances2027-figma-ui.zip
+          ls -lh src || true
           test -s src/App.tsx
           test -s src/index.css
       - name: Install dependencies
