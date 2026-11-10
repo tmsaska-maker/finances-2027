@@ -14,7 +14,11 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Domain tests
         run: npm test
-      - name: Type-check
+      - name: Domain type-check
         run: npm run typecheck
+      - name: App type-check
+        if: ${{ hashFiles('src/App.tsx') != '' }}
+        run: npx tsc --noEmit -p tsconfig.json
       - name: Production build
+        if: ${{ hashFiles('src/App.tsx') != '' }}
         run: npm run build

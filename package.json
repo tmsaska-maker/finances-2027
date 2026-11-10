@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test src/domain/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit -p tsconfig.domain.json"
   },
   "dependencies": {
     "react": "^19.0.0",
