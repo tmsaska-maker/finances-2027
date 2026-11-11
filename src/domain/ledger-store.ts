@@ -7,7 +7,12 @@ export interface KeyValueStore {
 }
 export const DEMO_KEY = 'finances-2027:demo-ledger-v1';
 export class LedgerStore {
-  constructor(private readonly storage: KeyValueStore, private readonly key = DEMO_KEY) {}
+  private readonly storage: KeyValueStore;
+  private readonly key: string;
+  constructor(storage: KeyValueStore, key = DEMO_KEY) {
+    this.storage = storage;
+    this.key = key;
+  }
   load(): Ledger {
     const raw = this.storage.getItem(this.key);
     if (raw === null) return emptyLedger();
