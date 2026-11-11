@@ -26,7 +26,7 @@ jobs:
       - name: Type-check React application
         run: npm run typecheck
       - name: Test private API validators and auth gate
-        run: node --test server/*.test.mjs
+        run: node --test server/validation.test.mjs server/http.test.mjs
       - name: Production build
         run: npm run build
 
