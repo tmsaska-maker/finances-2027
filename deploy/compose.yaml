@@ -1,0 +1,52 @@
+# Isolated finance stack. Keep this project separate from Screening40.
+name: finances2027
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: finances_app
+      POSTGRES_PASSWORD: ${FINANCES_DB_PASSWORD:?Set in private .env}
+      POSTGRES_DB: finances2027
+    volumes:
+      - finances_db:/var/lib/postgresql/data
+    networks:
+      - finances_private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finances_app -d finances2027"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    mem_limit: 320m
+    pids_limit: 100
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      FINANCES_DATABASE_URL: postgresql://finances_app:${FINANCES_DB_PASSWORD:?Set in private .env}@db:5432/finances2027
+      FINANCES_API_TOKEN: ${FINANCES_API_TOKEN:?Set in private .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8091:8091"
+    networks:
+      - finances_private
+    mem_limit: 192m
+    pids_limit: 100
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  finances_private:
+    driver: bridge
+
+volumes:
+  finances_db:
+    name: finances2027_db
