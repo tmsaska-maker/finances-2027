@@ -24,17 +24,21 @@ jobs:
           node-version: '22'
       - name: Restore approved Figma UI
         run: |
-          pwd
-          ls -lh
-          git ls-files | head -50
-          stat finances2027-figma-ui.zip || true
-          test -s finances2027-figma-ui.zip
-          file finances2027-figma-ui.zip
-          unzip -l finances2027-figma-ui.zip
-          unzip -o finances2027-figma-ui.zip
-          ls -lh src || true
+          if [ ! -s src/App.tsx ] || [ ! -s src/index.css ]; then
+            test -s finances2027-figma-ui.zip
+            unzip -o -q finances2027-figma-ui.zip src/App.tsx src/index.css
+          fi
           test -s src/App.tsx
           test -s src/index.css
+      - name: Commit approved Figma sources to main once
+        run: |
+          if ! git ls-files --error-unmatch src/App.tsx src/index.css >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src/App.tsx src/index.css
+            git commit -m "feat: track approved Figma source files directly"
+            git push origin HEAD:main
+          fi
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Build UI
