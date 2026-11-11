@@ -1,0 +1,75 @@
+name: Staging - test and package financial app
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finance-staging
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: finances_ci
+          POSTGRES_PASSWORD: only_for_ephemeral_ci
+          POSTGRES_DB: finances_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U finances_ci -d finances_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FINANCES_TEST_DATABASE_URL: postgresql://finances_ci:only_for_ephemeral_ci@localhost:5432/finances_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install locked UI dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Finance domain tests
+        run: npm test
+      - name: Type check both domains and UI
+        run: |
+          npm run typecheck:domain
+          npm run typecheck
+      - name: Unit tests for API
+        run: node --test server/validation.test.mjs server/http.test.mjs
+      - name: Install server dependencies for integration
+        run: npm install --prefix server --no-audit --no-fund --ignore-scripts
+      - name: PostgreSQL integration tests
+        run: node --test server/integration.test.mjs
+      - name: Deployment config validation
+        run: |
+          node --test deploy/compose.test.mjs
+          FINANCES_DB_PASSWORD=ci-placeholder-not-a-secret FINANCES_API_TOKEN=ci-placeholder-not-a-secret docker compose -f deploy/compose.yaml config -q
+      - name: Build staging UI
+        run: npm run build
+      - name: Package staging release
+        run: |
+          printf '%s\n' "${GITHUB_SHA}" > dist/revision.txt
+          tar -czf finances2027-staging-${GITHUB_SHA}.tar.gz -C dist .
+      - name: Archive test-passed staging release
+        uses: actions/upload-artifact@v4
+        with:
+          name: finances2027-staging-release
+          path: finances2027-staging-*.tar.gz
+          retention-days: 30
+      - name: Publish staging website source in separate branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: site-staging
+          publish_dir: ./dist
+          force_orphan: true
+          commit_message: 'staging: tested ${{ github.sha }}'
