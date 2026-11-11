@@ -12,5 +12,7 @@ if (!process.env.FINANCES_DATABASE_URL || !process.env.FINANCES_API_TOKEN) {
 const pool = new Pool({ connectionString: process.env.FINANCES_DATABASE_URL, max: 5 });
 await pool.query('SELECT 1');
 const server=makeServer(pool,process.env.FINANCES_API_TOKEN);
-server.listen(8091,'127.0.0.1',()=>console.log('Finances API listening on loopback only, 127.0.0.1:8091'));
+const bindHost = process.env.FINANCES_BIND_HOST === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1';
+// Containers must listen on their interface; Compose restricts host publication to loopback.
+server.listen(8091, bindHost, () => console.log('Finances API listening on ' + bindHost + ':8091'));
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>server.close(async()=>{await pool.end();process.exit(0);}));

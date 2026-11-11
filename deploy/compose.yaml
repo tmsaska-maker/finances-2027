@@ -29,6 +29,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      FINANCES_BIND_HOST: 0.0.0.0
       FINANCES_DATABASE_URL: postgresql://finances_app:${FINANCES_DB_PASSWORD:?Set in private .env}@db:5432/finances2027
       FINANCES_API_TOKEN: ${FINANCES_API_TOKEN:?Set in private .env}
     depends_on:
