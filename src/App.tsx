@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { readDemoSession, saveDemoSession, toKopiykas, toMinor, type DemoExpense, type DemoPending } from "./domain/expense-session"
 
 type Space = "business" | "personal"
 type Project = "Усі напрями" | "Амбулаторія" | "Скринінг" | "Психотерапія"
@@ -2024,26 +2025,8 @@ function PersonalPlanning({ notify }: { notify: (v: string) => void }) {
 }
 
 type ExpenseStatus = "planned" | "due" | "partial" | "paid"
-type ExpenseItem = {
-  id: number
-  counterparty: string
-  category: string
-  project: Exclude<Project, "Усі напрями">
-  amount: number
-  due: string
-  bank: string
-  status: ExpenseStatus
-  paid: number
-  note: string
-}
-type PendingPayment = {
-  id: number
-  obligationId: number
-  date: string
-  amount: number
-  bank: string
-  note: string
-}
+type ExpenseItem = DemoExpense
+type PendingPayment = DemoPending
 
 const demoExpenses: ExpenseItem[] = [
   { id: 1, counterparty: "Оренда приміщення", category: "Оренда", project: "Амбулаторія", amount: 14000, due: "2027-06-05", bank: "monobank ФОП UAH", status: "due", paid: 0, note: "Стандартний щомісячний платіж" },
@@ -2059,8 +2042,32 @@ function ExpensesScreen({ project, setProject, navigate, notify }: {
   navigate: (s: Screen) => void
   notify: (s: string) => void
 }) {
-  const [items, setItems] = useState<ExpenseItem[]>(demoExpenses)
-  const [pending, setPending] = useState<PendingPayment[]>([])
+  // Browser-only demo persistence, NEVER for live financial data.
+  const [initial] = useState(() => {
+    try {
+      const saved = readDemoSession(window.localStorage)
+      return { items: saved?.items ?? demoExpenses, pending: saved?.pending ?? [] as PendingPayment[], error: "" }
+    } catch (e) {
+      return { items: demoExpenses, pending: [] as PendingPayment[], error: e instanceof Error ? e.message : "Зберігання недоступне" }
+    }
+  })
+  const [items, setItems] = useState<ExpenseItem[]>(initial.items)
+  const [pending, setPending] = useState<PendingPayment[]>(initial.pending)
+  const [saveError, setSaveError] = useState(initial.error)
+  const commitDemo = (nextItems: ExpenseItem[], nextPending: PendingPayment[]): boolean => {
+    if (saveError) { notify("Запис заблоковано: " + saveError); return false }
+    try {
+      saveDemoSession(window.localStorage, { version: 1, items: nextItems, pending: nextPending })
+      setItems(nextItems)
+      setPending(nextPending)
+      return true
+    } catch (e) {
+      const problem = e instanceof Error ? e.message : "Помилка збереження"
+      setSaveError(problem)
+      notify("Не збережено: " + problem)
+      return false
+    }
+  }
   const [view, setView] = useState<"obligations" | "reconcile">("obligations")
   const [statusFilter, setStatusFilter] = useState("all")
   const [query, setQuery] = useState("")
@@ -2094,32 +2101,38 @@ function ExpensesScreen({ project, setProject, navigate, notify }: {
   }
   const create = (e: React.FormEvent) => {
     e.preventDefault()
-    const amount = Number(newAmount)
-    if (!newName.trim() || !Number.isFinite(amount) || amount<=0) return
-    setItems(old=>[...old,{id:Math.max(...old.map(r=>r.id),0)+1,counterparty:newName.trim(),category:newCategory,project:newProject,amount,due:newDue,bank:newBank,status:"planned",paid:0,note:newNote}])
+    let amount: number
+    try { amount = toKopiykas(newAmount) / 100 } catch (e) { notify((e as Error).message); return }
+    if (!newName.trim() || amount <= 0) return
+    const next = [...items,{id:Math.max(...items.map(r=>r.id),0)+1,counterparty:newName.trim(),category:newCategory,project:newProject,amount,due:newDue,bank:newBank,status:"planned" as const,paid:0,note:newNote}]
+    if (!commitDemo(next, pending)) return
     setForm(null);setNewName("");setNewAmount("");setNewNote("")
-    notify("Демо: зобов’язання додано до поточного сеансу")
+    notify("Тестове зобов’язання збережено в цьому браузері")
   }
   const preparePayment = (e: React.FormEvent) => {
     e.preventDefault()
     if (!opened) return
-    const amount = Number(payAmount)
-    if (!Number.isFinite(amount) || amount <= 0 || amount > opened.amount-opened.paid) return
-    const alreadyPending = pending.filter(p=>p.obligationId===opened.id).reduce((s,p)=>s+p.amount,0)
-    if (amount + alreadyPending > opened.amount-opened.paid) {
-      notify("Сума перевищує непогашений залишок з урахуванням непідтверджених платежів")
+    let amountMinor: number
+    try { amountMinor = toKopiykas(payAmount) } catch (e) { notify((e as Error).message); return }
+    const remainingMinor = toMinor(opened.amount) - toMinor(opened.paid)
+    if (amountMinor <= 0 || amountMinor > remainingMinor) { notify("Платіж перевищує залишок"); return }
+    const queuedMinor = pending.filter(p=>p.obligationId===opened.id).reduce((s,p)=>s+toMinor(p.amount),0)
+    if (amountMinor + queuedMinor > remainingMinor) {
+      notify("Сума перевищує залишок з урахуванням непідтверджених платежів")
       return
     }
-    setPending(old=>[...old,{id:Math.max(...old.map(x=>x.id),0)+1,obligationId:opened.id,date:payDate,amount,bank:payBank,note:payNote}])
+    const next = [...pending,{id:Math.max(...pending.map(x=>x.id),0)+1,obligationId:opened.id,date:payDate,amount:amountMinor/100,bank:payBank,note:payNote}]
+    if (!commitDemo(items, next)) return
     setForm(null);setView("reconcile")
-    notify("Демо: платіж очікує звірки — борг не зменшено")
+    notify("Тестовий платіж збережено; борг не зменшено до демопідтвердження")
   }
   const confirmDemo = (p: PendingPayment) => {
     const r = items.find(x=>x.id===p.obligationId)
-    if (!r || r.paid+p.amount>r.amount) return
-    setItems(old=>old.map(x=>x.id!==r.id?x:{...x,paid:x.paid+p.amount,status:x.paid+p.amount>=x.amount?"paid":"partial"}))
-    setPending(old=>old.filter(x=>x.id!==p.id))
-    notify("Демо-звірка: залишок зобов’язання оновлено; з банком не пов’язано")
+    if (!r || toMinor(r.paid)+toMinor(p.amount)>toMinor(r.amount)) return
+    const updatedPaid = (toMinor(r.paid)+toMinor(p.amount))/100
+    const nextItems = items.map(x=>x.id!==r.id?x:{...x,paid:updatedPaid,status:(toMinor(updatedPaid)>=toMinor(x.amount)?"paid":"partial") as ExpenseStatus})
+    if (!commitDemo(nextItems,pending.filter(x=>x.id!==p.id))) return
+    notify("Лише демопідтвердження: борг оновлено і збережено, банківської звірки немає")
   }
   return <>
     <ProjectSwitcher project={project} setProject={setProject} />
@@ -2127,7 +2140,7 @@ function ExpensesScreen({ project, setProject, navigate, notify }: {
       subtitle="Зобов’язання, очікувані платежі й фактичне погашення — три різні події"
       actions={<><button className="secondary" onClick={()=>navigate("planning")}><Icon name="calendar" size={16}/> План наступного місяця</button>
         <button className="primary" onClick={()=>setForm("new")}><Icon name="plus" size={16}/> Нове зобов’язання</button></>}/>
-    <div className="expenses-notice"><Icon name="alert" size={16}/><span><strong>Робочий прототип.</strong> Суми, оплати та звірки демонстраційні. Немає підключення до банків або збереження після перезавантаження.</span></div>
+    <div className="expenses-notice"><Icon name="alert" size={16}/><span><strong>Тільки тестові дані.</strong> Записи зберігаються в цьому браузері й залишаються після перезавантаження. Це НЕ серверна база, НЕ банківська звірка; реальні фінанси не вводити. {saveError && <strong role="alert"> Помилка сховища: {saveError}. Нові записи заблоковані, дані не видалено.</strong>}</span></div>
     <div className="expenses-summary">
       <div className="expense-kpi"><span>Усього зобов’язань</span><strong>{formatMoney(total)}</strong><small>{scoped.length} записів</small></div>
       <div className="expense-kpi"><span>Погашено (демо)</span><strong>{formatMoney(paid)}</strong><small>Не є банківським підтвердженням</small></div>
@@ -2145,13 +2158,13 @@ function ExpensesScreen({ project, setProject, navigate, notify }: {
         {visible.map(r=><tr key={r.id}><td><button className="expense-link" onClick={()=>setPreviewId(previewId===r.id?null:r.id)}>{r.counterparty}</button><small>{r.bank}</small></td><td>{r.project}</td><td>{r.category}</td><td>{r.due.split("-").reverse().join(".")}</td><td className="num">{formatMoney(r.amount)}</td><td className="num">{formatMoney(r.paid)}</td><td className="num weight">{formatMoney(r.amount-r.paid)}</td><td><span className={`expense-status ${r.paid>=r.amount?"ok":r.paid>0?"part":r.status}`}>{statusName(r)}</span></td><td>{r.paid<r.amount && <button className="secondary small" onClick={()=>startPay(r)}>Платіж</button>}</td></tr>)}
         {visible.length===0 && <tr><td colSpan={9} className="expenses-empty">За заданими фільтрами записів немає.</td></tr>}
       </tbody></table></div> : <div className="expense-pending">
-        {pending.length===0 ? <div className="expenses-empty">Поки немає платежів, які очікують звірки. Натисни «Платіж» біля зобов’язання, щоб додати тестовий запис.</div> : pending.map(p=>{const r=items.find(x=>x.id===p.obligationId);return <div className="expense-pending-row" key={p.id}><div><strong>{r?.counterparty}</strong><small>{p.date.split("-").reverse().join(".")} · {p.bank} · статус «очікує підтвердження»</small></div><b>{formatMoney(p.amount)}</b><button className="secondary small" onClick={()=>confirmDemo(p)}>Підтвердити в демо</button><button className="expense-remove" aria-label="Видалити підготовлений платіж" onClick={()=>setPending(old=>old.filter(x=>x.id!==p.id))}><Icon name="close" size={15}/></button></div>})}
+        {pending.length===0 ? <div className="expenses-empty">Поки немає платежів, які очікують звірки. Натисни «Платіж» біля зобов’язання, щоб додати тестовий запис.</div> : pending.map(p=>{const r=items.find(x=>x.id===p.obligationId);return <div className="expense-pending-row" key={p.id}><div><strong>{r?.counterparty}</strong><small>{p.date.split("-").reverse().join(".")} · {p.bank} · статус «очікує підтвердження»</small></div><b>{formatMoney(p.amount)}</b><button className="secondary small" onClick={()=>confirmDemo(p)}>Підтвердити в демо</button><button className="expense-remove" aria-label="Видалити підготовлений платіж" onClick={()=>commitDemo(items,pending.filter(x=>x.id!==p.id))}><Icon name="close" size={15}/></button></div>})}
       </div>}
       {previewId!==null && view==="obligations" && (()=>{const r=items.find(x=>x.id===previewId);return r?<div className="expense-detail"><strong>Деталі: {r.counterparty}</strong><span>Проєкт: {r.project} · {r.category}</span><span>Строк оплати: {r.due.split("-").reverse().join(".")} · Плановий банк: {r.bank}</span><span>{r.note||"Без примітки"}</span><span>План: {formatMoney(r.amount)} · Оплачено: {formatMoney(r.paid)} · Борг: {formatMoney(r.amount-r.paid)}</span></div>:null})()}
     </section>
     <div className="expense-footnote">Нарахування зарплати й податкові платежі в повній системі з’являтимуться в загальному календарі автоматично з їхніх модулів, без повторного ручного введення.</div>
-    {form && <div className="expense-modal-backdrop" onClick={()=>setForm(null)}><section className="expense-modal" role="dialog" aria-modal="true" aria-label={form==="new"?"Нове зобов’язання":"Підготувати платіж"} onClick={e=>e.stopPropagation()}><div className="expense-modal-head"><div><span>Демонстраційне введення</span><h2>{form==="new"?"Нове зобов’язання":"Підготувати платіж"}</h2></div><button onClick={()=>setForm(null)} aria-label="Закрити"><Icon name="close"/></button></div>
-      {form==="new" ? <form onSubmit={create}><label>Контрагент або назва<input required value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Наприклад, оренда приміщення"/></label><div className="expense-form-grid"><label>Проєкт<select value={newProject} onChange={e=>setNewProject(e.target.value as Exclude<Project,"Усі напрями">)}><option>Амбулаторія</option><option>Скринінг</option><option>Психотерапія</option></select></label><label>Категорія<select value={newCategory} onChange={e=>setNewCategory(e.target.value)}>{["Послуги","Оренда","Програмне забезпечення","Комунальні платежі","Розхідні матеріали","Обладнання","Інше"].map(x=><option key={x}>{x}</option>)}</select></label><label>Планова сума, ₴<input type="number" min="0.01" step="0.01" required value={newAmount} onChange={e=>setNewAmount(e.target.value)}/></label><label>Очікуваний строк<input type="date" required value={newDue} onChange={e=>setNewDue(e.target.value)}/></label></div><label>Рахунок оплати<select value={newBank} onChange={e=>setNewBank(e.target.value)}>{["monobank ФОП UAH","ПриватБанк ФОП UAH","monobank ФОП USD"].map(x=><option key={x}>{x}</option>)}</select></label><label>Примітка<textarea value={newNote} onChange={e=>setNewNote(e.target.value)} rows={2}/></label><div className="expense-modal-actions"><button type="button" className="secondary" onClick={()=>setForm(null)}>Скасувати</button><button type="submit" className="primary">Додати до демо-реєстру</button></div></form> : <form onSubmit={preparePayment}><div className="expense-callout"><strong>{opened?.counterparty}</strong><span>Непогашений залишок: {formatMoney((opened?.amount||0)-(opened?.paid||0))}</span><span>Запланована оплата не зменшує борг до звірки.</span></div><div className="expense-form-grid"><label>Сума, ₴<input type="number" required min="0.01" max={opened?.amount} step="0.01" value={payAmount} onChange={e=>setPayAmount(e.target.value)}/></label><label>Дата платежу<input type="date" required value={payDate} onChange={e=>setPayDate(e.target.value)}/></label></div><label>Банк списання<select value={payBank} onChange={e=>setPayBank(e.target.value)}>{["monobank ФОП UAH","ПриватБанк ФОП UAH","monobank ФОП USD"].map(x=><option key={x}>{x}</option>)}</select></label><label>Примітка<textarea rows={2} value={payNote} onChange={e=>setPayNote(e.target.value)} placeholder="Призначення або уточнення"/></label><div className="expense-modal-actions"><button type="button" className="secondary" onClick={()=>setForm(null)}>Скасувати</button><button type="submit" className="primary">Додати до черги звірки</button></div></form>}
+    {form && <div className="expense-modal-backdrop" onClick={()=>setForm(null)}><section className="expense-modal" role="dialog" aria-modal="true" aria-label={form==="new"?"Нове зобов’язання":"Підготувати платіж"} onClick={e=>e.stopPropagation()}><div className="expense-modal-head"><div><span>Тестове введення · цей браузер</span><h2>{form==="new"?"Нове зобов’язання":"Підготувати платіж"}</h2></div><button onClick={()=>setForm(null)} aria-label="Закрити"><Icon name="close"/></button></div>
+      {form==="new" ? <form onSubmit={create}><label>Контрагент або назва<input required value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Наприклад, оренда приміщення"/></label><div className="expense-form-grid"><label>Проєкт<select value={newProject} onChange={e=>setNewProject(e.target.value as Exclude<Project,"Усі напрями">)}><option>Амбулаторія</option><option>Скринінг</option><option>Психотерапія</option></select></label><label>Категорія<select value={newCategory} onChange={e=>setNewCategory(e.target.value)}>{["Послуги","Оренда","Програмне забезпечення","Комунальні платежі","Розхідні матеріали","Обладнання","Інше"].map(x=><option key={x}>{x}</option>)}</select></label><label>Планова сума, ₴<input type="number" min="0.01" step="0.01" required value={newAmount} onChange={e=>setNewAmount(e.target.value)}/></label><label>Очікуваний строк<input type="date" required value={newDue} onChange={e=>setNewDue(e.target.value)}/></label></div><label>Рахунок оплати<select value={newBank} onChange={e=>setNewBank(e.target.value)}>{["monobank ФОП UAH","ПриватБанк ФОП UAH","monobank ФОП USD"].map(x=><option key={x}>{x}</option>)}</select></label><label>Примітка<textarea value={newNote} onChange={e=>setNewNote(e.target.value)} rows={2}/></label><div className="expense-modal-actions"><button type="button" className="secondary" onClick={()=>setForm(null)}>Скасувати</button><button type="submit" className="primary">Зберегти тестове зобов’язання</button></div></form> : <form onSubmit={preparePayment}><div className="expense-callout"><strong>{opened?.counterparty}</strong><span>Непогашений залишок: {formatMoney((opened?.amount||0)-(opened?.paid||0))}</span><span>Запланована оплата не зменшує борг до звірки.</span></div><div className="expense-form-grid"><label>Сума, ₴<input type="number" required min="0.01" max={opened?.amount} step="0.01" value={payAmount} onChange={e=>setPayAmount(e.target.value)}/></label><label>Дата платежу<input type="date" required value={payDate} onChange={e=>setPayDate(e.target.value)}/></label></div><label>Банк списання<select value={payBank} onChange={e=>setPayBank(e.target.value)}>{["monobank ФОП UAH","ПриватБанк ФОП UAH","monobank ФОП USD"].map(x=><option key={x}>{x}</option>)}</select></label><label>Примітка<textarea rows={2} value={payNote} onChange={e=>setPayNote(e.target.value)} placeholder="Призначення або уточнення"/></label><div className="expense-modal-actions"><button type="button" className="secondary" onClick={()=>setForm(null)}>Скасувати</button><button type="submit" className="primary">Додати до черги звірки</button></div></form>}
     </section></div>}
   </>
 }
