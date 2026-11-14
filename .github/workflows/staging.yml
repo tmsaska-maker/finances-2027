@@ -49,6 +49,8 @@ jobs:
         run: npm install --prefix server --no-audit --no-fund --ignore-scripts
       - name: PostgreSQL integration tests
         run: node --test server/integration.test.mjs
+      - name: Gateway security tests
+        run: node --test gateway/gateway.test.mjs
       - name: Deployment config validation
         run: |
           node --test deploy/compose.test.mjs
