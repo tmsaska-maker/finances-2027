@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import ServerExpenses from "./ServerExpenses"
 import { readDemoSession, saveDemoSession, toKopiykas, toMinor, type DemoExpense, type DemoPending } from "./domain/expense-session"
 
 type Space = "business" | "personal"
@@ -338,8 +339,9 @@ function App() {
                   navigate={navigate}
                 />
               )}
-              {screen === "expenses" && (
-                <ExpensesScreen project={direction} setProject={setDirection} navigate={navigate} notify={notify} />
+              {screen === "expenses" && (new URLSearchParams(window.location.search).get("financeServer")==="1"
+                ? <ServerExpenses />
+                : <ExpensesScreen project={direction} setProject={setDirection} navigate={navigate} notify={notify} />
               )}
               {screen === "planning" && (
                 <Planning
