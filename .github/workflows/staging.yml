@@ -49,10 +49,12 @@ jobs:
         run: npm install --prefix server --no-audit --no-fund --ignore-scripts
       - name: PostgreSQL integration tests
         run: node --test server/integration.test.mjs
+      - name: Gateway security tests
+        run: node --test gateway/gateway.test.mjs
       - name: Deployment config validation
         run: |
           node --test deploy/compose.test.mjs
-          FINANCES_DB_PASSWORD=ci-placeholder-not-a-secret FINANCES_API_TOKEN=ci-placeholder-not-a-secret docker compose -f deploy/compose.yaml config -q
+          FINANCES_DB_PASSWORD=ci-placeholder-not-a-secret FINANCES_API_TOKEN=ci-placeholder-not-a-secret FINANCES_GATEWAY_KEY=ci-other-placeholder-not-a-secret docker compose -f deploy/compose.yaml config -q
       - name: Build staging UI
         run: npm run build
       - name: Package staging release
