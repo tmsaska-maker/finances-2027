@@ -33,7 +33,7 @@ jobs:
         run: node --test deploy/compose.test.mjs
       - name: Check Docker Compose syntax with dummy CI secrets
         run: |
-          FINANCES_DB_PASSWORD=ci-placeholder-not-a-secret FINANCES_API_TOKEN=ci-placeholder-not-a-secret docker compose -f deploy/compose.yaml config -q
+          FINANCES_DB_PASSWORD=ci-placeholder-not-a-secret FINANCES_API_TOKEN=ci-placeholder-not-a-secret FINANCES_GATEWAY_KEY=ci-other-placeholder-not-a-secret docker compose -f deploy/compose.yaml config -q
       - name: Production build
         run: npm run build
 
