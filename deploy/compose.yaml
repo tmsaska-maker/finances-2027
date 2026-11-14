@@ -44,6 +44,26 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  gateway:
+    build:
+      context: ../gateway
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      FINANCES_API_TOKEN: ${FINANCES_API_TOKEN:?Set in private .env}
+      FINANCES_GATEWAY_KEY: ${FINANCES_GATEWAY_KEY:?Set independent key in private .env}
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:8092:8092"
+    networks:
+      - finances_private
+    mem_limit: 96m
+    pids_limit: 50
+    security_opt:
+      - no-new-privileges:true
+
 networks:
   finances_private:
     driver: bridge
