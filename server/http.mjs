@@ -10,6 +10,7 @@ export function makeServer(pool, token) {
     if(req.headers.authorization!==`Bearer ${token}`) return send(401,{error:'Unauthorized'});
     try {
       if(req.method==='GET' && req.url==='/health') return send(200,{ok:true});
+      if(req.method==='GET' && req.url==='/obligations') return send(200,await repo.listObligations());
       if(req.method==='GET' && /^\/obligations\/[a-zA-Z0-9_-]{1,120}$/.test(req.url||'')) {
         const result=await repo.getObligation(req.url.slice('/obligations/'.length));
         return result?send(200,result):send(404,{error:'Not found'});

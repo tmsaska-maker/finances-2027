@@ -10,7 +10,7 @@ export function createRepository(pool) {
     },
     async addObligation(value) {
       const x = obligationInput(value);
-      await pool.query('INSERT INTO obligations(id,project,amount_minor,currency,due_date) VALUES($1,$2,$3,$4,$5)',[x.id,x.project,x.amountMinor,x.currency,x.dueDate]);
+      await pool.query('INSERT INTO obligations(id,project,amount_minor,currency,due_date,title,category,planned_bank,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[x.id,x.project,x.amountMinor,x.currency,x.dueDate,x.title,x.category,x.plannedBank,x.note]);
       return x;
     },
     async addTransaction(value) {
@@ -47,14 +47,20 @@ export function createRepository(pool) {
       } catch(error) { await client.query('ROLLBACK'); throw error; }
       finally { client.release(); }
     },
+    async listObligations() {
+      const rows=await pool.query('SELECT id FROM obligations ORDER BY due_date DESC, created_at DESC, id DESC LIMIT 500');
+      const records=[];
+      for(const row of rows.rows) records.push(await this.getObligation(row.id));
+      return {records,limit:500};
+    },
     async getObligation(id) {
-      const x = await pool.query('SELECT id,project,amount_minor::text AS amount_minor,currency,due_date::text AS due_date FROM obligations WHERE id=$1',[id]);
+      const x = await pool.query('SELECT id,project,amount_minor::text AS amount_minor,currency,due_date::text AS due_date,title,category,planned_bank,note FROM obligations WHERE id=$1',[id]);
       if(!x.rowCount) return null;
       const p=await pool.query('SELECT id,amount_minor::text AS amount_minor,currency,state,bank_transaction_id FROM payments WHERE obligation_id=$1 ORDER BY created_at,id',[id]);
       const paid=p.rows.filter(z=>z.state==='confirmed').reduce((sum,z)=>sum+BigInt(z.amount_minor),0n);
       const total=BigInt(x.rows[0].amount_minor);
       const remaining=total>paid?total-paid:0n;
-      return { id:x.rows[0].id,project:x.rows[0].project,currency:x.rows[0].currency,dueDate:x.rows[0].due_date,amountMinor:total.toString(),paidMinor:paid.toString(),remainingMinor:remaining.toString(),overpaidMinor:(paid>total?paid-total:0n).toString(),payments:p.rows.map(z=>({id:z.id,amountMinor:z.amount_minor,currency:z.currency,state:z.state,bankTransactionId:z.bank_transaction_id})) };
+      return { id:x.rows[0].id,project:x.rows[0].project,currency:x.rows[0].currency,dueDate:x.rows[0].due_date,title:x.rows[0].title,category:x.rows[0].category,plannedBank:x.rows[0].planned_bank,note:x.rows[0].note,amountMinor:total.toString(),paidMinor:paid.toString(),remainingMinor:remaining.toString(),overpaidMinor:(paid>total?paid-total:0n).toString(),payments:p.rows.map(z=>({id:z.id,amountMinor:z.amount_minor,currency:z.currency,state:z.state,bankTransactionId:z.bank_transaction_id})) };
     }
   };
 }

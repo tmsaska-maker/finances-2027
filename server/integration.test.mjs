@@ -14,8 +14,11 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     const migration = readFileSync(new URL('./sql/001_initial.sql', import.meta.url), 'utf8');
     await pool.query(migration);
     await pool.query(migration); // idempotent on a clean finance-only DB
+    const metadata = readFileSync(new URL('./sql/002_expense_metadata.sql', import.meta.url), 'utf8');
+    await pool.query(metadata);
+    await pool.query(metadata);
     const version = await pool.query('SELECT version FROM schema_migrations');
-    assert.deepEqual(version.rows.map(row => row.version), [1]);
+    assert.deepEqual(version.rows.map(row => row.version), [1,2]);
 
     server = makeServer(pool, TOKEN);
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -35,8 +38,11 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     assert.equal((await send('/accounts', account)).status, 201);
     assert.equal((await send('/accounts', account)).status, 409);
 
-    const obligation = { id: 'bill-1', project: 'ambulatory', amountMinor: 2_000_000, currency: 'UAH', dueDate: '2026-12-01' };
+    const obligation = { id: 'bill-1', project: 'ambulatory', amountMinor: 2_000_000, currency: 'UAH', dueDate: '2026-12-01', title:'Тестова оренда', category:'Оренда', plannedBank:'Тестовий банк',note:'Лише демо' };
     assert.equal((await send('/obligations', obligation)).status, 201);
+    const list=await send('/obligations',undefined,'GET');
+    assert.equal(list.status,200);
+    assert.equal(list.body.records[0].title,'Тестова оренда');
 
     const planned = { id: 'planned-1', obligationId: 'bill-1', amountMinor: 800_000, currency: 'UAH', state: 'submitted' };
     assert.equal((await send('/payments', planned)).status, 201);

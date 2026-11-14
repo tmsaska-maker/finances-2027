@@ -30,7 +30,7 @@ export function accountInput(value) {
 }
 export function obligationInput(value) {
   const x=object(value);
-  return { id:text(x.id,'id'), project:enumValue(x.project,PROJECTS,'project'),currency:enumValue(x.currency,CURRENCIES,'currency'),amountMinor:money(x.amountMinor),dueDate:isoDate(x.dueDate) };
+  return { id:text(x.id,'id'), project:enumValue(x.project,PROJECTS,'project'),currency:enumValue(x.currency,CURRENCIES,'currency'),amountMinor:money(x.amountMinor),dueDate:isoDate(x.dueDate),title:optionalText(x.title,'title',120),category:optionalText(x.category,'category',120),plannedBank:optionalText(x.plannedBank,'plannedBank',120),note:optionalText(x.note,'note',2000) };
 }
 export function transactionInput(value) {
   const x=object(value);
@@ -42,3 +42,5 @@ export function paymentInput(value) {
   if(result.state === 'confirmed' && !result.bankTransactionId) throw new Error('Confirmed payment requires bank transaction ID');
   return result;
 }
+
+export function optionalText(value,name,max) {if(value==null) return ''; if(typeof value!=='string'||value.length>max) throw new Error('Invalid '+name);return value;}
