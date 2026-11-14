@@ -13,6 +13,11 @@ test('finance API binds explicitly to loopback, no shared screening volumes',()=
   assert.match(s,/name: finances2027_db/);
   assert.doesNotMatch(s,/screening40[-_]/i);
 });
+test('finance gateway is loopback-only and requires independent secret',()=>{
+  assert.match(s,/"127\\.0\\.0\\.1:8092:8092"/);
+  assert.match(s,/FINANCES_GATEWAY_KEY/);
+  assert.doesNotMatch(s,/"0\\.0\\.0\\.0:8092:8092"/);
+});
 test('backup never prunes volumes or dumps another database',()=>{
   const backup=readFileSync(new URL('./backup.sh',import.meta.url),'utf8');
   assert.match(backup,/pg_dump/);
