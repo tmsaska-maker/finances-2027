@@ -8,15 +8,15 @@ export type ServerBill = {
 };
 export function parseMoney(text:string):number {
  const t=text.trim().replace(',','.');
- if(!/^(0|[1-9]\\d*)(?:\\.\\d{1,2})?$/.test(t)) throw Error('Невірна сума: максимум 2 знаки після коми');
+ if(!/^(0|[1-9]\d*)(?:\.\d{1,2})?$/.test(t)) throw Error('Невірна сума: максимум 2 знаки після коми');
  const [w,f='']=t.split('.');
  const v=Number(w)*100+Number(f.padEnd(2,'0'));
  if(!Number.isSafeInteger(v)||v<=0) throw Error('Сума має бути додатною');
  return v;
 }
 export function showMinor(text:string):string {
- if(!/^\\d+$/.test(text)) throw Error('Невірний формат суми');
- const n=BigInt(text);return (n/100n).toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g,' ') + ',' + (n%100n).toString().padStart(2,'0')+' грн';
+ if(!/^\d+$/.test(text)) throw Error('Невірний формат суми');
+ const n=BigInt(text);return (n/100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,' ') + ',' + (n%100n).toString().padStart(2,'0')+' грн';
 }
 async function call<T>(path:string,opts?:RequestInit):Promise<T> {
  const r=await fetch('/finance-api'+path,{...opts,credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json',...(opts?.headers||{})}});
