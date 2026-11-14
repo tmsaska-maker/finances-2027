@@ -27,6 +27,8 @@ jobs:
         run: npm run typecheck
       - name: Test private API validators and auth gate
         run: node --test server/validation.test.mjs server/http.test.mjs
+      - name: Test authenticated finance gateway
+        run: node --test gateway/gateway.test.mjs
       - name: Verify finance-only deployment isolation
         run: node --test deploy/compose.test.mjs
       - name: Check Docker Compose syntax with dummy CI secrets
