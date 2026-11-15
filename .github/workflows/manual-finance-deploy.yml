@@ -1,0 +1,219 @@
+name: Manual finance T011 deploy (Lightsail)
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Read-only preflight or finance-only backup + deploy"
+        required: true
+        type: choice
+        default: preflight
+        options:
+          - preflight
+          - deploy
+      approved_sha:
+        description: "For deploy: exact 40-character main SHA; empty for preflight"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: finances2027-manual-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: finances_ci
+          POSTGRES_PASSWORD: ephemeral_ci_only
+          POSTGRES_DB: finances_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U finances_ci -d finances_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FINANCES_TEST_DATABASE_URL: postgresql://finances_ci:ephemeral_ci_only@localhost:5432/finances_ci
+    steps:
+      - name: Check exact owner-approved SHA for deploy
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          OPERATION: ${{ inputs.operation }}
+        shell: bash
+        run: |
+          if [[ "$OPERATION" == deploy ]]; then
+            [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Full 40-character SHA required"; exit 1; }
+            test "$APPROVED_SHA" = "$GITHUB_SHA" || { echo "SHA does not match selected main revision"; exit 1; }
+          fi
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate finance deploy script
+        run: bash -n deploy/manual-finance-release.sh
+      - name: Validate UI and finance domains
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run typecheck:domain
+          npm run typecheck
+          npm run build
+          node --test deploy/compose.test.mjs
+      - name: PostgreSQL integration validation
+        run: |
+          npm install --prefix server --no-audit --no-fund --ignore-scripts
+          node --test server/integration.test.mjs
+      - name: Build release API image on runner (not Lightsail)
+        if: inputs.operation == 'deploy'
+        run: |
+          docker build -t "finances2027-api:${GITHUB_SHA}" server
+          docker save "finances2027-api:${GITHUB_SHA}" | gzip -1 > "finances-api-${GITHUB_SHA}.tar.gz"
+      - name: Share deploy image with controlled job
+        if: inputs.operation == 'deploy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-api-image
+          path: finances-api-*.tar.gz
+          retention-days: 1
+
+  lightsail:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && needs.validate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AWS_REGION: eu-central-1
+      INSTANCE_NAME: ${{ vars.FINANCES_LIGHTSAIL_INSTANCE_NAME }}
+      ROLE_ARN: ${{ vars.FINANCES_AWS_DEPLOY_ROLE_ARN }}
+      BACKUP_BUCKET: ${{ vars.FINANCES_BACKUP_BUCKET }}
+      OPERATION: ${{ inputs.operation }}
+    steps:
+      - name: Check deployment configuration
+        shell: bash
+        run: |
+          test -n "$INSTANCE_NAME" || { echo "Missing FINANCES_LIGHTSAIL_INSTANCE_NAME"; exit 1; }
+          test -n "$ROLE_ARN" || { echo "Missing FINANCES_AWS_DEPLOY_ROLE_ARN"; exit 1; }
+          if [[ "$OPERATION" == deploy ]]; then
+            test -n "$BACKUP_BUCKET" || { echo "Missing FINANCES_BACKUP_BUCKET"; exit 1; }
+          fi
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download tested API Docker image
+        if: inputs.operation == 'deploy'
+        uses: actions/download-artifact@v4
+        with:
+          name: finance-api-image
+      - name: Use temporary AWS role credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.ROLE_ARN }}
+          role-duration-seconds: 1800
+      - name: Validate finance-only private off-host backup storage
+        if: inputs.operation == 'deploy'
+        run: |
+          test "$(aws s3api get-bucket-versioning --bucket "$BACKUP_BUCKET" --query Status --output text)" = Enabled
+          aws s3api get-public-access-block --bucket "$BACKUP_BUCKET" --output json | jq -e '
+            .PublicAccessBlockConfiguration | .BlockPublicAcls and .IgnorePublicAcls and .BlockPublicPolicy and .RestrictPublicBuckets
+          ' >/dev/null
+          aws s3api get-bucket-encryption --bucket "$BACKUP_BUCKET" --output json | jq -e '
+            any(.ServerSideEncryptionConfiguration.Rules[]; .ApplyServerSideEncryptionByDefault.SSEAlgorithm == "AES256")
+          ' >/dev/null
+          aws s3api get-bucket-tagging --bucket "$BACKUP_BUCKET" --output json | jq -e '
+            .TagSet | any(.Key == "Project" and .Value == "Finances2027")
+          ' >/dev/null
+      - name: Open temporary SSH access for this runner only
+        id: ssh_open
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNNER_IP="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+          [[ "$RUNNER_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+          echo "RUNNER_CIDR=$RUNNER_IP/32" >> "$GITHUB_ENV"
+          PORT_INFO="$(jq -nc --arg cidr "$RUNNER_IP/32" '{fromPort:22,toPort:22,protocol:"tcp",cidrs:[$cidr]}')"
+          aws lightsail open-instance-public-ports --region "$AWS_REGION" --instance-name "$INSTANCE_NAME" --port-info "$PORT_INFO"
+      - name: Get ephemeral Lightsail SSH credentials and pinned host key
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws lightsail get-instance-access-details --region "$AWS_REGION" --instance-name "$INSTANCE_NAME" --protocol ssh > "$RUNNER_TEMP/access.json"
+          jq -er '.accessDetails.privateKey' "$RUNNER_TEMP/access.json" > "$RUNNER_TEMP/finance-key"
+          jq -er '.accessDetails.certKey' "$RUNNER_TEMP/access.json" > "$RUNNER_TEMP/finance-key-cert.pub"
+          chmod 600 "$RUNNER_TEMP/finance-key"
+          chmod 644 "$RUNNER_TEMP/finance-key-cert.pub"
+          SSH_USER="$(jq -er '.accessDetails.username' "$RUNNER_TEMP/access.json")"
+          SSH_IP="$(jq -er '.accessDetails.ipAddress' "$RUNNER_TEMP/access.json")"
+          jq -r --arg host "$SSH_IP" '.accessDetails.hostKeys[] | "\($host) \(.algorithm) \(.publicKey)"' "$RUNNER_TEMP/access.json" > "$RUNNER_TEMP/known_hosts"
+          test -s "$RUNNER_TEMP/known_hosts"
+          echo "SSH_USER=$SSH_USER" >> "$GITHUB_ENV"
+          echo "SSH_IP=$SSH_IP" >> "$GITHUB_ENV"
+      - name: Stage strictly isolated finance deployment package
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+          STAGE="/tmp/finances2027-${GITHUB_SHA}"
+          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "mkdir -p '$STAGE/sql' && chmod 700 '$STAGE'"
+          scp "${SSH_OPTS[@]}" deploy/manual-finance-release.sh "$SSH_USER@$SSH_IP:$STAGE/manual-finance-release.sh"
+          if [[ "$OPERATION" == deploy ]]; then
+            scp "${SSH_OPTS[@]}" server/sql/00{3,4,5,6}_*.sql "$SSH_USER@$SSH_IP:$STAGE/sql/"
+            scp "${SSH_OPTS[@]}" "finances-api-${GITHUB_SHA}.tar.gz" "$SSH_USER@$SSH_IP:$STAGE/"
+          fi
+      - name: Finance-only read-only preflight
+        shell: bash
+        run: |
+          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/manual-finance-release.sh' '${GITHUB_SHA}' preflight"
+      - name: Finance backup and isolated restore test
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/manual-finance-release.sh' '${GITHUB_SHA}' backup"
+          scp "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP:/tmp/finances2027-${GITHUB_SHA}/backup-export.dump" "$RUNNER_TEMP/finances-backup.dump"
+          scp "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP:/tmp/finances2027-${GITHUB_SHA}/backup.sha256" "$RUNNER_TEMP/backup.sha256"
+          EXPECTED="$(cut -d ' ' -f1 "$RUNNER_TEMP/backup.sha256")"
+          ACTUAL="$(sha256sum "$RUNNER_TEMP/finances-backup.dump" | cut -d ' ' -f1)"
+          test "$ACTUAL" = "$EXPECTED"
+          OBJECT_KEY="finance/postgresql/${GITHUB_SHA}/${GITHUB_RUN_ID}.dump"
+          aws s3 cp "$RUNNER_TEMP/finances-backup.dump" "s3://$BACKUP_BUCKET/$OBJECT_KEY" --sse AES256 --only-show-errors
+          aws s3api head-object --bucket "$BACKUP_BUCKET" --key "$OBJECT_KEY" --output json | jq -e '
+            .ContentLength > 0 and .ServerSideEncryption == "AES256"
+          ' >/dev/null
+          printf '%s\n' "$EXPECTED" > "$RUNNER_TEMP/offsite-backup-verified.sha256"
+          scp "${SSH_OPTS[@]}" "$RUNNER_TEMP/offsite-backup-verified.sha256" "$SSH_USER@$SSH_IP:/tmp/finances2027-${GITHUB_SHA}/"
+          echo "Finance backup: off-host S3 verified (object key hidden from ordinary logs)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy only finance SQL migrations and API
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/manual-finance-release.sh' '${GITHUB_SHA}' apply"
+          echo "Finance API and migrations deployed for commit $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Cleanup staged finance files and temporary SSH rules
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${SSH_USER:-}" && -n "${SSH_IP:-}" && -f "$RUNNER_TEMP/finance-key" && -f "$RUNNER_TEMP/known_hosts" ]]; then
+            SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+            ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo rm -rf '/tmp/finances2027-${GITHUB_SHA}'" >/dev/null 2>&1 || true
+          fi
+          if [[ -n "${RUNNER_CIDR:-}" ]]; then
+            PORT_INFO="$(jq -nc --arg cidr "$RUNNER_CIDR" '{fromPort:22,toPort:22,protocol:"tcp",cidrs:[$cidr]}')"
+            aws lightsail close-instance-public-ports --region "$AWS_REGION" --instance-name "$INSTANCE_NAME" --port-info "$PORT_INFO" >/dev/null || true
+          fi
+          rm -f "$RUNNER_TEMP/finances-backup.dump" "$RUNNER_TEMP/backup.sha256" "$RUNNER_TEMP/offsite-backup-verified.sha256" "$RUNNER_TEMP/finance-key" "$RUNNER_TEMP/finance-key-cert.pub" "$RUNNER_TEMP/known_hosts" "$RUNNER_TEMP/access.json"
