@@ -16,7 +16,7 @@ test('restore drill, S3 and finance-only deployment gates are mandatory',()=>{
     assert.ok(wf.includes(key)||script.includes(key), 'Missing gate: '+key);
   }
   assert.match(script,/ROOT=\/opt\/finances-2027/);
-  assert.match(script,/APP="\$ROOT\/backend"/);
+  assert.match(script,/APP="\$ROOT\/backend\/deploy"/);
   assert.match(script,/test .+ = finances2027/);
   assert.match(script,/\[\[ -s "\$MARKER" && -s "\$DUMP" \]\]/);
   assert.doesNotMatch(script,/docker\s+compose\s+down/);
