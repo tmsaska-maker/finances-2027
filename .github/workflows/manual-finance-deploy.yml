@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "Read-only preflight or finance-only backup + deploy"
+        description: "Read-only preflight, private counts-only audit, or finance-only backup + deploy"
         required: true
         type: choice
         default: preflight
         options:
           - preflight
+          - audit
           - deploy
       approved_sha:
         description: "For deploy: exact 40-character main SHA; empty for preflight"
@@ -169,6 +170,9 @@ jobs:
           STAGE="/tmp/finances2027-${GITHUB_SHA}"
           ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "mkdir -p '$STAGE/sql' && chmod 700 '$STAGE'"
           scp "${SSH_OPTS[@]}" deploy/manual-finance-release.sh "$SSH_USER@$SSH_IP:$STAGE/manual-finance-release.sh"
+          if [[ "$OPERATION" == audit ]]; then
+            scp "${SSH_OPTS[@]}" deploy/finance-live-readonly-audit.sh "$SSH_USER@$SSH_IP:$STAGE/finance-live-readonly-audit.sh"
+          fi
           if [[ "$OPERATION" == deploy ]]; then
             scp "${SSH_OPTS[@]}" server/sql/00{3,4,5,6}_*.sql "$SSH_USER@$SSH_IP:$STAGE/sql/"
             scp "${SSH_OPTS[@]}" "finances-api-${GITHUB_SHA}.tar.gz" "$SSH_USER@$SSH_IP:$STAGE/"
@@ -178,6 +182,13 @@ jobs:
         run: |
           SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
           ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/manual-finance-release.sh' '${GITHUB_SHA}' preflight"
+      - name: Audit live finance categories and row counts (read-only, no PII)
+        if: inputs.operation == 'audit'
+        shell: bash
+        run: |
+          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/finance-live-readonly-audit.sh'"
+
       - name: Finance backup and isolated restore test
         if: inputs.operation == 'deploy'
         shell: bash
