@@ -46,8 +46,23 @@ if [[ "$ACTION" == backup ]]; then
  mv "$tmp" "$DUMP"
  chmod 600 "$DUMP"
  # Restore drill to isolated TEMP finance DB only. Not the live database.
- "$APP/restore-drill.sh" "$DUMP"
+ # Restore into a disposable finance-only database; always drop it after verification.
+ drill_db="finances_drill_${SHA:0:12}"
+ cleanup_drill() {
+   "${DC[@]}" exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" dropdb --if-exists -U "$POSTGRES_USER" "$1"' _ "$drill_db" >/dev/null 2>&1 || true
+ }
+ trap 'cleanup_drill; rm -f "$tmp"' EXIT
+ "${DC[@]}" exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" createdb -U "$POSTGRES_USER" "$1"' _ "$drill_db"
+ "${DC[@]}" exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore --exit-on-error --no-owner --no-acl -U "$POSTGRES_USER" -d "$1"' _ "$drill_db" < "$DUMP"
+ check="$("${DC[@]}" exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -v ON_ERROR_STOP=1 -Atq -U "$POSTGRES_USER" -d "$1" -c "SELECT count(*) FROM schema_migrations WHERE version=1"' _ "$drill_db" | tr -d '\r')"
+ [[ "$check" == 1 ]] || { echo "Restore verification failed" >&2; exit 1; }
+ cleanup_drill
+ trap 'rm -f "$tmp"' EXIT
  sha256sum "$DUMP" > "$STAGE/backup.sha256"
+ # Temporary SSH-downloadable copy, removed by workflow cleanup after S3 upload.
+ cp "$DUMP" "$STAGE/backup-export.dump"
+ chown "${SUDO_USER:?SUDO_USER required}" "$STAGE/backup-export.dump"
+ chmod 600 "$STAGE/backup-export.dump"
  echo "Local finance backup and isolated restore drill PASS."
  exit 0
 fi
