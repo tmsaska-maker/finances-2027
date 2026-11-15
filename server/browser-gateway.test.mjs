@@ -20,12 +20,12 @@ test('finance read gateway fails closed on bad deployment configuration',()=>{
 });
 test('browser session is cookie-only and finance bearer stays on server',async()=>{
  let upstreamCount=0;
+ const upstreamRequests=[];
  let upstream,gate;
  try {
  upstream=(await import('node:http')).createServer((req,res)=>{
   upstreamCount++;
-  assert.equal(req.headers.authorization,upToken);
-  assert.ok(req.url.startsWith('/categories'));
+  upstreamRequests.push({authorization:req.headers.authorization,path:req.url});
   res.setHeader('content-type','application/json');res.end(JSON.stringify({project:'personal',economicType:'expense',records:[]}));
  });
  const apiOrigin=await listen(upstream);
@@ -48,6 +48,8 @@ test('browser session is cookie-only and finance bearer stays on server',async()
   assert.equal(authenticated.authenticated,true);
   const read=await fetch(base+'/finance-api/categories?project=personal&type=expense',{headers:{cookie}});
   assert.equal(read.status,200);assert.equal(upstreamCount,1);
+  assert.equal(upstreamRequests[0].authorization,upToken);
+  assert.ok(upstreamRequests[0].path.startsWith('/categories'));
   assert.equal((await read.json()).records.length,0);
   const noPosts=await fetch(base+'/finance-api/obligations',{method:'POST',headers:{cookie,origin:publicOrigin}});
   assert.equal(noPosts.status,405);
