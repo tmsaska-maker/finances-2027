@@ -28,3 +28,15 @@ GitHub → [Actions](https://github.com/tmsaska-maker/finances-2027/actions) →
 
 ## Важливе про один сервер і копії
 Один Lightsail, один S3-бакет, але фінансова БД — **окрема** і не повинна ділити таблиці/томи з Screening40. Це **не дубль застосунку**. Перед зміною SQL потрібна відновлювана резервна копія саме фінансової БД; тимчасові копії на runner і в /tmp очищаються. S3 має lifecycle `finance/postgresql/` для контрольованого зберігання. Окрема IAM роль обмежує GitHub-вхід, однак SSH+sudo на спільному хості технічно має ширші права — вимоги до скриптів і code review лишаються критично важливими.
+
+## T011: підготовка першого deploy (після успішного preflight №43746301119)
+
+Уже перевірено: роль Finances2027Deploy через GitHub OIDC, змінні FINANCES_AWS_DEPLOY_ROLE_ARN та FINANCES_LIGHTSAIL_INSTANCE_NAME, фінансова конфігурація в /opt/finances-2027/backend/deploy/. Новий сервер або S3-бакет не потрібні.
+
+1. AWS IAM → Roles → Finances2027Deploy → Permissions → Add permissions → Create inline policy → JSON. Вставити вміст `infra/aws/finance-s3-backup-inline-policy.json` і назвати політику `Finances2027S3Backup`. Це ДОДАТКОВА політика до `Finances2027PreflightLightsail`: не замінювати чинну, не змінювати Screening40. Право PutObject дозволене лише у `finance/postgresql/*` із SSE-S3 AES256.
+2. GitHub → finances-2027 → Settings → Secrets and variables → Actions → Variables: додати `FINANCES_BACKUP_BUCKET` зі значенням `screening40-staging-backups`. Інші дві вже налаштовані змінні не змінювати. Назва бакета не є секретом.
+3. AWS S3 → наявний bucket screening40-staging-backups: перевірити Versioning, Block public access, default SSE-S3. Для prefix `finance/postgresql/` окремо налаштувати lifecycle (наприклад expiration 30 днів / noncurrent versions 7 днів після погодження термінів зберігання). Не змінювати правило `staging/postgresql/` Скринінгу. Не створювати нового bucket.
+4. Перед deploy повторно виконати manual preflight. Після PASS окремо запускати manual deploy з повним поточним SHA main. Сценарій створює одну S3-копію саме фінансової БД, перевіряє її SHA256 у S3 metadata, відновлення у тимчасовій finance DB, SQL 003–006, finance-only API smoke. Локальний backup видаляється тільки після успіху. За помилки локальна копія залишається для ручного відновлення.
+5. Після deploy переглянути журнал GitHub Actions і підтвердити стан фінансового API; автоматично змінювати Figma UI або Screening40 не можна.
+
+Злиття коду (мердж) не створює ні IAM-дозволу, ні GitHub variable, ні S3 lifecycle — це одноразові ручні дії в AWS та GitHub.
