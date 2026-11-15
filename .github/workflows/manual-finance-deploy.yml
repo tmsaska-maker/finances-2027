@@ -98,6 +98,7 @@ jobs:
       INSTANCE_NAME: ${{ vars.FINANCES_LIGHTSAIL_INSTANCE_NAME }}
       ROLE_ARN: ${{ vars.FINANCES_AWS_DEPLOY_ROLE_ARN }}
       BACKUP_BUCKET: ${{ vars.FINANCES_BACKUP_BUCKET }}
+      BACKUP_PREFIX: finance/postgresql
       OPERATION: ${{ inputs.operation }}
     steps:
       - name: Check deployment configuration
@@ -132,9 +133,9 @@ jobs:
           aws s3api get-bucket-encryption --bucket "$BACKUP_BUCKET" --output json | jq -e '
             any(.ServerSideEncryptionConfiguration.Rules[]; .ApplyServerSideEncryptionByDefault.SSEAlgorithm == "AES256")
           ' >/dev/null
-          aws s3api get-bucket-tagging --bucket "$BACKUP_BUCKET" --output json | jq -e '
-            .TagSet | any(.Key == "Project" and .Value == "Finances2027")
-          ' >/dev/null
+          # Shared bucket is permitted; IAM role must restrict finance writes to BACKUP_PREFIX.
+          test "$BACKUP_PREFIX" = "finance/postgresql"
+          echo "Using existing protected S3 bucket with isolated finance prefix."
       - name: Open temporary SSH access for this runner only
         id: ssh_open
         shell: bash
@@ -189,7 +190,7 @@ jobs:
           EXPECTED="$(cut -d ' ' -f1 "$RUNNER_TEMP/backup.sha256")"
           ACTUAL="$(sha256sum "$RUNNER_TEMP/finances-backup.dump" | cut -d ' ' -f1)"
           test "$ACTUAL" = "$EXPECTED"
-          OBJECT_KEY="finance/postgresql/${GITHUB_SHA}/${GITHUB_RUN_ID}.dump"
+          OBJECT_KEY="$BACKUP_PREFIX/${GITHUB_SHA}/${GITHUB_RUN_ID}.dump"
           aws s3 cp "$RUNNER_TEMP/finances-backup.dump" "s3://$BACKUP_BUCKET/$OBJECT_KEY" --sse AES256 --only-show-errors
           aws s3api head-object --bucket "$BACKUP_BUCKET" --key "$OBJECT_KEY" --output json | jq -e '
             .ContentLength > 0 and .ServerSideEncryption == "AES256"

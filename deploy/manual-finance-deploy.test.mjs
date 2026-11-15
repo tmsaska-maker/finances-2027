@@ -22,3 +22,15 @@ test('restore drill, S3 and finance-only deployment gates are mandatory',()=>{
   assert.doesNotMatch(script,/docker\s+compose\s+down/);
   execFileSync('bash',['-n',new URL('./manual-finance-release.sh',import.meta.url).pathname]);
 });
+
+test('shared existing S3 bucket is used with finance-only prefix and repo-scoped OIDC trust',()=>{
+  const trust=JSON.parse(readFileSync(new URL('../infra/aws/finance-github-oidc-trust.template.json',import.meta.url),'utf8'));
+  const permissions=JSON.parse(readFileSync(new URL('../infra/aws/finance-deploy-policy.template.json',import.meta.url),'utf8'));
+  assert.equal(trust.Statement[0].Condition.StringEquals['token.actions.githubusercontent.com:sub'],'repo:tmsaska-maker@258178043/finances-2027@1450410210:ref:refs/heads/main');
+  const objectPermissions=permissions.Statement.filter(s=>String(s.Resource).includes('/*'));
+  assert.ok(objectPermissions.length>=2);
+  assert.ok(objectPermissions.every(s=>s.Resource === 'arn:aws:s3:::screening40-staging-backups/finance/postgresql/*'));
+  assert.match(wf,/BACKUP_PREFIX: finance\/postgresql/);
+  assert.match(wf,/OBJECT_KEY="\$BACKUP_PREFIX\//);
+  assert.doesNotMatch(wf,/\.Value == "Finances2027"/);
+});

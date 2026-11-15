@@ -1,0 +1,48 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ExistingLightsailFinanceDeployment",
+      "Effect": "Allow",
+      "Action": [
+        "lightsail:GetInstanceAccessDetails",
+        "lightsail:OpenInstancePublicPorts",
+        "lightsail:CloseInstancePublicPorts"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "Screening40",
+          "aws:ResourceTag/Environment": "staging"
+        }
+      }
+    },
+    {
+      "Sid": "ReadExistingProtectedBucketSecuritySettings",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketVersioning",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetEncryptionConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::screening40-staging-backups"
+    },
+    {
+      "Sid": "UploadOnlyFinanceBackupsEncrypted",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject"],
+      "Resource": "arn:aws:s3:::screening40-staging-backups/finance/postgresql/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-server-side-encryption": "AES256"
+        }
+      }
+    },
+    {
+      "Sid": "VerifyOnlyFinanceBackups",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::screening40-staging-backups/finance/postgresql/*"
+    }
+  ]
+}
