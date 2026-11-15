@@ -7,14 +7,14 @@ ACTION="${2:-}"
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Expected exact 40-char commit SHA" >&2; exit 2; }
 [[ "$ACTION" == preflight || "$ACTION" == backup || "$ACTION" == apply ]] || exit 2
 ROOT=/opt/finances-2027
-APP="$ROOT/backend"
+APP="$ROOT/backend/deploy"
 STAGE="/tmp/finances2027-$SHA"
 BACKUPS="$ROOT/backups"
 DUMP="$BACKUPS/finances2027-$SHA.dump"
 MARKER="$STAGE/offsite-backup-verified.sha256"
 
 [[ -d "$APP" && -f "$APP/compose.yaml" && -f "$APP/.env" ]] || {
- echo "Expected finance-only /opt/finances-2027/backend/compose.yaml and .env; abort." >&2; exit 1;
+ echo "Expected finance-only /opt/finances-2027/backend/deploy/compose.yaml and .env; abort." >&2; exit 1;
 }
 cd "$APP"
 DC=(docker compose --env-file "$APP/.env" -f "$APP/compose.yaml")
