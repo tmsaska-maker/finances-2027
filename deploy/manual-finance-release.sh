@@ -59,9 +59,13 @@ if [[ "$ACTION" == backup ]]; then
  cleanup_drill
  trap 'rm -f "$tmp"' EXIT
  sha256sum "$DUMP" > "$STAGE/backup.sha256"
- # Temporary SSH-downloadable copy, removed by workflow cleanup after S3 upload.
+ # Only the ephemeral SSH user may read these staged backup verification files.
+ # The finance dump under $BACKUPS remains root-owned; the shared-stage files
+ # are removed by the workflow cleanup after the S3 integrity check.
+ chown "${SUDO_USER:?SUDO_USER required}" "$STAGE/backup.sha256"
+ chmod 600 "$STAGE/backup.sha256"
  cp "$DUMP" "$STAGE/backup-export.dump"
- chown "${SUDO_USER:?SUDO_USER required}" "$STAGE/backup-export.dump"
+ chown "$SUDO_USER" "$STAGE/backup-export.dump"
  chmod 600 "$STAGE/backup-export.dump"
  echo "Local finance backup and isolated restore drill PASS."
  exit 0
