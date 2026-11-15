@@ -17,8 +17,35 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     const metadata = readFileSync(new URL('./sql/002_expense_metadata.sql', import.meta.url), 'utf8');
     await pool.query(metadata);
     await pool.query(metadata);
-    const version = await pool.query('SELECT version FROM schema_migrations');
-    assert.deepEqual(version.rows.map(row => row.version), [1,2]);
+    const catalogue = readFileSync(new URL('./sql/003_category_catalog.sql', import.meta.url), 'utf8');
+    await pool.query(catalogue);
+    await pool.query(catalogue); // additive and idempotent, including trigger
+    const version = await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+    assert.deepEqual(version.rows.map(row => row.version), [1,2,3]);
+
+    // One category can be shared across business directions without copying its identity.
+    await pool.query("INSERT INTO finance_categories(id,code,name,economic_type) VALUES ('payroll','payroll','Зарплата персоналу','expense')");
+    await pool.query("INSERT INTO finance_categories(id,code,name,parent_id,economic_type) VALUES ('doctor','doctor','Сімейний лікар','payroll','expense')");
+    await pool.query("INSERT INTO project_category_access(project,category_id) VALUES ('ambulatory','payroll'),('screening','payroll'),('ambulatory','doctor'),('screening','doctor')");
+    await pool.query("INSERT INTO category_source_aliases(project,source_file,source_label,category_id,reviewed_by) VALUES ('ambulatory','legacy_ambulatory','Зарплата персоналу','payroll','migration-review'),('screening','legacy_screening','Зарплата персоналу','payroll','migration-review')");
+    const visible = await pool.query("SELECT project,category_id FROM project_category_access WHERE category_id='payroll' ORDER BY project");
+    assert.deepEqual(visible.rows, [{project:'ambulatory',category_id:'payroll'},{project:'screening',category_id:'payroll'}]);
+    const aliases = await pool.query("SELECT COUNT(*)::int AS count FROM category_source_aliases WHERE category_id='payroll'");
+    assert.equal(aliases.rows[0].count, 2);
+    await assert.rejects(
+      pool.query("INSERT INTO category_source_aliases(project,source_file,source_label,category_id,reviewed_by) VALUES ('personal','legacy_personal','Зарплата персоналу','payroll','migration-review')"),
+      error => error.code === '23503',
+    );
+    await assert.rejects(
+      pool.query("INSERT INTO finance_categories(id,code,name,parent_id,economic_type) VALUES ('grandchild','grandchild','Не дозволено','doctor','expense')"),
+      error => error.code === '23514',
+    );
+    await assert.rejects(
+      pool.query("INSERT INTO finance_categories(id,code,name,parent_id,economic_type) VALUES ('wrong-type','wrong-type','Не дозволено','payroll','income')"),
+      error => error.code === '23514',
+    );
+    const legacy = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name='obligations' AND column_name='category'");
+    assert.equal(legacy.rowCount, 1); // no rewriting or dropping existing text field
 
     server = makeServer(pool, TOKEN);
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
