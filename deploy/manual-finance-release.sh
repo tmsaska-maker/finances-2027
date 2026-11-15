@@ -99,5 +99,8 @@ docker compose --env-file "$APP/.env" -f "$APP/compose.yaml" -f "$override" exec
   }
   console.log("Finance API smoke PASS");
 '
+# Store the exact image override only after the authenticated finance API smoke passed.
+# Do not edit base compose config or any Screening40 component.
+install -m 600 "$override" "$APP/compose.finance-release.yaml"
 echo "$SHA" > "$ROOT/finance-api-deployed-sha"
 echo "Finance T011 deployment PASS. Historical transactions untouched. Screening40 not modified."
