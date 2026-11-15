@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import ServerExpenses from "./ServerExpenses"
+import { loadReadOnlyFinanceExpenses } from "./domain/live-finance-expenses"
 import { readDemoSession, saveDemoSession, toKopiykas, toMinor, type DemoExpense, type DemoPending } from "./domain/expense-session"
 
 type Space = "business" | "personal"
@@ -175,6 +176,8 @@ const formatMoney = (value: number) =>
   " ₴"
 
 function App() {
+  // Private build only. Public GitHub Pages always stays an isolated synthetic demo.
+  const privateFinanceMode = import.meta.env.VITE_FINANCES_PRIVATE_UI === "true"
   const [space, setSpace] = useState<Space>("business")
   const [screen, setScreen] = useState<Screen>("dashboard")
   const [direction, setDirection] = useState<Project>("Усі напрями")
@@ -341,7 +344,7 @@ function App() {
               )}
               {screen === "expenses" && (new URLSearchParams(window.location.search).get("financeServer")==="1"
                 ? <ServerExpenses />
-                : <ExpensesScreen project={direction} setProject={setDirection} navigate={navigate} notify={notify} />
+                : <ExpensesScreen project={direction} setProject={setDirection} navigate={navigate} notify={notify} privateMode={privateFinanceMode} />
               )}
               {screen === "planning" && (
                 <Planning
@@ -2040,14 +2043,16 @@ const demoExpenses: ExpenseItem[] = [
 
 const formatDemoMoney = (value: number) => new Intl.NumberFormat("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value) + " ₴"
 
-function ExpensesScreen({ project, setProject, navigate, notify }: {
+function ExpensesScreen({ project, setProject, navigate, notify, privateMode }: {
   project: Project
   setProject: (p: Project) => void
   navigate: (s: Screen) => void
   notify: (s: string) => void
+  privateMode: boolean
 }) {
   // Browser-only demo persistence, NEVER for live financial data.
   const [initial] = useState(() => {
+    if (privateMode) return {items: [] as ExpenseItem[], pending: [] as PendingPayment[], error: ""}
     try {
       const saved = readDemoSession(window.localStorage)
       return { items: saved?.items ?? demoExpenses, pending: saved?.pending ?? [] as PendingPayment[], error: "" }
@@ -2058,7 +2063,22 @@ function ExpensesScreen({ project, setProject, navigate, notify }: {
   const [items, setItems] = useState<ExpenseItem[]>(initial.items)
   const [pending, setPending] = useState<PendingPayment[]>(initial.pending)
   const [saveError, setSaveError] = useState(initial.error)
+  const [liveBusy, setLiveBusy] = useState(privateMode)
+  const [liveError, setLiveError] = useState("")
+  useEffect(() => {
+    if (!privateMode) return
+    const controller = new AbortController()
+    setLiveBusy(true)
+    setLiveError("")
+    void loadReadOnlyFinanceExpenses({signal:controller.signal}).then(records => {
+      if (!controller.signal.aborted) setItems(records)
+    }).catch(error => {
+      if (!controller.signal.aborted) {setItems([]); setLiveError((error as Error).message)}
+    }).finally(() => {if (!controller.signal.aborted) setLiveBusy(false)})
+    return () => controller.abort()
+  }, [privateMode])
   const commitDemo = (nextItems: ExpenseItem[], nextPending: PendingPayment[]): boolean => {
+    if (privateMode) { notify("Приватний серверний реєстр доступний лише для перегляду"); return false }
     if (saveError) { notify("Запис заблоковано: " + saveError); return false }
     try {
       saveDemoSession(window.localStorage, { version: 1, items: nextItems, pending: nextPending })
@@ -2097,7 +2117,7 @@ function ExpensesScreen({ project, setProject, navigate, notify }: {
   const total = scoped.reduce((s,r) => s+r.amount,0)
   const paid = scoped.reduce((s,r) => s+r.paid,0)
   const outstanding = Math.max(0,total-paid)
-  const overdue = scoped.filter(r => r.status !== "paid" && r.due < "2027-06-18").reduce((s,r)=>s+r.amount-r.paid,0)
+  const overdue = scoped.filter(r => r.status !== "paid" && r.due < (privateMode ? new Date().toISOString().slice(0,10) : "2027-06-18")).reduce((s,r)=>s+r.amount-r.paid,0)
   const statusName = (r: ExpenseItem) => r.paid >= r.amount ? "Оплачено" : r.paid>0 ? "Частково" : r.status === "planned" ? "Заплановано" : "До оплати"
   const startPay = (r: ExpenseItem) => {
     setActiveId(r.id);setPayAmount(((Math.max(0,toMinor(r.amount)-toMinor(r.paid)))/100).toFixed(2))
@@ -2105,6 +2125,7 @@ function ExpensesScreen({ project, setProject, navigate, notify }: {
   }
   const create = (e: React.FormEvent) => {
     e.preventDefault()
+    if (privateMode) {notify("Приватний реєстр доступний лише для перегляду"); return}
     let amount: number
     try { amount = toKopiykas(newAmount) / 100 } catch (e) { notify((e as Error).message); return }
     if (!newName.trim() || amount <= 0) return
@@ -2115,6 +2136,7 @@ function ExpensesScreen({ project, setProject, navigate, notify }: {
   }
   const preparePayment = (e: React.FormEvent) => {
     e.preventDefault()
+    if (privateMode) {notify("Приватний реєстр доступний лише для перегляду"); return}
     if (!opened) return
     let amountMinor: number
     try { amountMinor = toKopiykas(payAmount) } catch (e) { notify((e as Error).message); return }
@@ -2140,34 +2162,36 @@ function ExpensesScreen({ project, setProject, navigate, notify }: {
   }
   return <>
     <ProjectSwitcher project={project} setProject={setProject} />
-    <PageHeading eyebrow="Операційний облік · червень 2027 · демонстраційні дані" title="Витрати та зобов’язання"
+    <PageHeading eyebrow={privateMode ? "Операційний облік · PostgreSQL · лише перегляд" : "Операційний облік · червень 2027 · демонстраційні дані"} title="Витрати та зобов’язання"
       subtitle="Зобов’язання, очікувані платежі й фактичне погашення — три різні події"
-      actions={<><button className="secondary" onClick={()=>navigate("planning")}><Icon name="calendar" size={16}/> План наступного місяця</button>
+      actions={privateMode ? null : <><button className="secondary" onClick={()=>navigate("planning")}><Icon name="calendar" size={16}/> План наступного місяця</button>
         <button className="primary" onClick={()=>setForm("new")}><Icon name="plus" size={16}/> Нове зобов’язання</button></>}/>
-    <div className="expenses-notice"><Icon name="alert" size={16}/><span><strong>Тільки тестові дані.</strong> Записи зберігаються в цьому браузері й залишаються після перезавантаження. Це НЕ серверна база, НЕ банківська звірка; реальні фінанси не вводити. {saveError && <strong role="alert"> Помилка сховища: {saveError}. Нові записи заблоковані, дані не видалено.</strong>}</span></div>
-    <div className="expenses-summary">
+    <div className="expenses-notice"><Icon name="alert" size={16}/><span>{privateMode ? <><strong>Приватний реєстр PostgreSQL · тільки перегляд.</strong> Нові зобов’язання та платежі недоступні до завершення серверної перевірки доступу. Жодного збереження в localStorage.</> : <><strong>Тільки тестові дані.</strong> Записи зберігаються в цьому браузері й залишаються після перезавантаження. Це НЕ серверна база, НЕ банківська звірка; реальні фінанси не вводити. {saveError && <strong role="alert"> Помилка сховища: {saveError}. Нові записи заблоковані, дані не видалено.</strong>}</>}</span></div>
+    {privateMode && liveBusy && <div className="expenses-notice" role="status">Перевіряємо захищену сесію та завантажуємо реєстр…</div>}
+    {privateMode && liveError && <div className="expenses-notice" role="alert">Дані з PostgreSQL недоступні: {liveError}. Демодані не підставляємо.</div>}
+    {(!privateMode || (!liveBusy && !liveError)) && <div className="expenses-summary">
       <div className="expense-kpi"><span>Усього зобов’язань</span><strong>{formatDemoMoney(total)}</strong><small>{scoped.length} записів</small></div>
-      <div className="expense-kpi"><span>Погашено (демо)</span><strong>{formatDemoMoney(paid)}</strong><small>Не є банківським підтвердженням</small></div>
+      <div className="expense-kpi"><span>{privateMode ? "Погашено (за банком)" : "Погашено (демо)"}</span><strong>{formatDemoMoney(paid)}</strong><small>{privateMode ? "Лише підтверджені банківські операції" : "Не є банківським підтвердженням"}</small></div>
       <div className="expense-kpi"><span>Залишок до сплати</span><strong>{formatDemoMoney(outstanding)}</strong><small>Включно з плановими</small></div>
-      <div className="expense-kpi danger"><span>Після умовного строку</span><strong>{formatDemoMoney(overdue)}</strong><small>Зріз демонстрації 18.06.2027</small></div>
-    </div>
+      <div className="expense-kpi danger"><span>Після умовного строку</span><strong>{formatDemoMoney(overdue)}</strong><small>{privateMode ? "Станом на сьогодні" : "Зріз демонстрації 18.06.2027"}</small></div>
+    </div>}
     <section className="table-card expense-register">
       <div className="table-tools expense-toolbar">
         <div className="tabs"><button className={view==="obligations"?"active":""} onClick={()=>setView("obligations")}>Реєстр зобов’язань <span>{visible.length}</span></button>
-          <button className={view==="reconcile"?"active":""} onClick={()=>setView("reconcile")}>Очікують звірки <span>{pending.length}</span></button></div>
+          {!privateMode && <button className={view==="reconcile"?"active":""} onClick={()=>setView("reconcile")}>Очікують звірки <span>{pending.length}</span></button>}</div>
         {view==="obligations" && <div className="expense-filters"><input aria-label="Пошук контрагента" placeholder="Пошук контрагента або категорії" value={query} onChange={e=>setQuery(e.target.value)}/>
           <select aria-label="Фільтр статусу" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">Усі статуси</option><option value="planned">Заплановано</option><option value="due">До оплати</option><option value="partial">Частково</option><option value="paid">Оплачено</option></select></div>}
       </div>
       {view==="obligations" ? <div className="expense-scroll"><table className="expense-table"><thead><tr><th>Контрагент / призначення</th><th>Проєкт</th><th>Категорія</th><th>Строк</th><th>Сума</th><th>Погашено</th><th>Залишок</th><th>Статус</th><th></th></tr></thead><tbody>
-        {visible.map(r=><tr key={r.id}><td><button className="expense-link" onClick={()=>setPreviewId(previewId===r.id?null:r.id)}>{r.counterparty}</button><small>{r.bank}</small></td><td>{r.project}</td><td>{r.category}</td><td>{r.due.split("-").reverse().join(".")}</td><td className="num">{formatDemoMoney(r.amount)}</td><td className="num">{formatDemoMoney(r.paid)}</td><td className="num weight">{formatDemoMoney(r.amount-r.paid)}</td><td><span className={`expense-status ${r.paid>=r.amount?"ok":r.paid>0?"part":r.status}`}>{statusName(r)}</span></td><td>{r.paid<r.amount && <button className="secondary small" onClick={()=>startPay(r)}>Платіж</button>}</td></tr>)}
-        {visible.length===0 && <tr><td colSpan={9} className="expenses-empty">За заданими фільтрами записів немає.</td></tr>}
+        {visible.map(r=><tr key={r.id}><td><button className="expense-link" onClick={()=>setPreviewId(previewId===r.id?null:r.id)}>{r.counterparty}</button><small>{r.bank}</small></td><td>{r.project}</td><td>{r.category}</td><td>{r.due.split("-").reverse().join(".")}</td><td className="num">{formatDemoMoney(r.amount)}</td><td className="num">{formatDemoMoney(r.paid)}</td><td className="num weight">{formatDemoMoney(r.amount-r.paid)}</td><td><span className={`expense-status ${r.paid>=r.amount?"ok":r.paid>0?"part":r.status}`}>{statusName(r)}</span></td><td>{!privateMode && r.paid<r.amount && <button className="secondary small" onClick={()=>startPay(r)}>Платіж</button>}</td></tr>)}
+        {visible.length===0 && !liveBusy && !liveError && <tr><td colSpan={9} className="expenses-empty">За заданими фільтрами записів немає.</td></tr>}
       </tbody></table></div> : <div className="expense-pending">
         {pending.length===0 ? <div className="expenses-empty">Поки немає платежів, які очікують звірки. Натисни «Платіж» біля зобов’язання, щоб додати тестовий запис.</div> : pending.map(p=>{const r=items.find(x=>x.id===p.obligationId);return <div className="expense-pending-row" key={p.id}><div><strong>{r?.counterparty}</strong><small>{p.date.split("-").reverse().join(".")} · {p.bank} · статус «очікує підтвердження»</small></div><b>{formatDemoMoney(p.amount)}</b><button className="secondary small" onClick={()=>confirmDemo(p)}>Підтвердити в демо</button><button className="expense-remove" aria-label="Видалити підготовлений платіж" onClick={()=>commitDemo(items,pending.filter(x=>x.id!==p.id))}><Icon name="close" size={15}/></button></div>})}
       </div>}
       {previewId!==null && view==="obligations" && (()=>{const r=items.find(x=>x.id===previewId);return r?<div className="expense-detail"><strong>Деталі: {r.counterparty}</strong><span>Проєкт: {r.project} · {r.category}</span><span>Строк оплати: {r.due.split("-").reverse().join(".")} · Плановий банк: {r.bank}</span><span>{r.note||"Без примітки"}</span><span>План: {formatDemoMoney(r.amount)} · Оплачено: {formatDemoMoney(r.paid)} · Борг: {formatDemoMoney(r.amount-r.paid)}</span></div>:null})()}
     </section>
     <div className="expense-footnote">Нарахування зарплати й податкові платежі в повній системі з’являтимуться в загальному календарі автоматично з їхніх модулів, без повторного ручного введення.</div>
-    {form && <div className="expense-modal-backdrop" onClick={()=>setForm(null)}><section className="expense-modal" role="dialog" aria-modal="true" aria-label={form==="new"?"Нове зобов’язання":"Підготувати платіж"} onClick={e=>e.stopPropagation()}><div className="expense-modal-head"><div><span>Тестове введення · цей браузер</span><h2>{form==="new"?"Нове зобов’язання":"Підготувати платіж"}</h2></div><button onClick={()=>setForm(null)} aria-label="Закрити"><Icon name="close"/></button></div>
+    {!privateMode && form && <div className="expense-modal-backdrop" onClick={()=>setForm(null)}><section className="expense-modal" role="dialog" aria-modal="true" aria-label={form==="new"?"Нове зобов’язання":"Підготувати платіж"} onClick={e=>e.stopPropagation()}><div className="expense-modal-head"><div><span>Тестове введення · цей браузер</span><h2>{form==="new"?"Нове зобов’язання":"Підготувати платіж"}</h2></div><button onClick={()=>setForm(null)} aria-label="Закрити"><Icon name="close"/></button></div>
       {form==="new" ? <form onSubmit={create}><label>Контрагент або назва<input required value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Наприклад, оренда приміщення"/></label><div className="expense-form-grid"><label>Проєкт<select value={newProject} onChange={e=>setNewProject(e.target.value as Exclude<Project,"Усі напрями">)}><option>Амбулаторія</option><option>Скринінг</option><option>Психотерапія</option></select></label><label>Категорія<select value={newCategory} onChange={e=>setNewCategory(e.target.value)}>{["Послуги","Оренда","Програмне забезпечення","Комунальні платежі","Розхідні матеріали","Обладнання","Інше"].map(x=><option key={x}>{x}</option>)}</select></label><label>Планова сума, ₴<input type="number" min="0.01" step="0.01" required value={newAmount} onChange={e=>setNewAmount(e.target.value)}/></label><label>Очікуваний строк<input type="date" required value={newDue} onChange={e=>setNewDue(e.target.value)}/></label></div><label>Рахунок оплати<select value={newBank} onChange={e=>setNewBank(e.target.value)}>{["monobank ФОП UAH","ПриватБанк ФОП UAH","monobank ФОП USD"].map(x=><option key={x}>{x}</option>)}</select></label><label>Примітка<textarea value={newNote} onChange={e=>setNewNote(e.target.value)} rows={2}/></label><div className="expense-modal-actions"><button type="button" className="secondary" onClick={()=>setForm(null)}>Скасувати</button><button type="submit" className="primary">Зберегти тестове зобов’язання</button></div></form> : <form onSubmit={preparePayment}><div className="expense-callout"><strong>{opened?.counterparty}</strong><span>Непогашений залишок: {formatDemoMoney((opened?.amount||0)-(opened?.paid||0))}</span><span>Запланована оплата не зменшує борг до звірки.</span></div><div className="expense-form-grid"><label>Сума, ₴<input type="number" required min="0.01" max={opened?.amount} step="0.01" value={payAmount} onChange={e=>setPayAmount(e.target.value)}/></label><label>Дата платежу<input type="date" required value={payDate} onChange={e=>setPayDate(e.target.value)}/></label></div><label>Банк списання<select value={payBank} onChange={e=>setPayBank(e.target.value)}>{["monobank ФОП UAH","ПриватБанк ФОП UAH","monobank ФОП USD"].map(x=><option key={x}>{x}</option>)}</select></label><label>Примітка<textarea rows={2} value={payNote} onChange={e=>setPayNote(e.target.value)} placeholder="Призначення або уточнення"/></label><div className="expense-modal-actions"><button type="button" className="secondary" onClick={()=>setForm(null)}>Скасувати</button><button type="submit" className="primary">Додати до черги звірки</button></div></form>}
     </section></div>}
   </>
