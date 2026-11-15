@@ -25,13 +25,13 @@ function fixedEqual(a,b) {
   const x=Buffer.from(a),y=Buffer.from(b);
   return x.length===y.length && timingSafeEqual(x,y);
 }
-function parseSession(cookie,secret,now) {
+function parseSession(cookie,secret,now,active) {
   const token=String(cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(COOKIE+'='))?.slice(COOKIE.length+1);
   if(!token||!/^\d{10,13}\.[a-f0-9]{48}\.[a-f0-9]{64}$/.test(token))return false;
   const [expiry,nonce,signature]=token.split('.');
   if(Number(expiry)<=now || Number(expiry)>now+SESSION_SECONDS) return false;
   const expected=createHmac('sha256',secret).update(expiry+'.'+nonce).digest('hex');
-  return fixedEqual(expected,signature);
+  return fixedEqual(expected,signature) && active.get(token)===Number(expiry);
 }
 function newSession(secret,now) {
   const body=(now+SESSION_SECONDS)+'.'+randomBytes(24).toString('hex');
@@ -45,15 +45,18 @@ export function createFinanceBrowserGateway({publicOrigin,apiOrigin='http://127.
   if(typeof apiToken!=='string'||apiToken.length<32||typeof sessionSecret!=='string'||sessionSecret.length<48) throw Error('Missing private finance gateway secrets');
   if(typeof passwordDigest!=='string'|| !/^[a-f0-9]{48}:[a-f0-9]{64}$/.test(passwordDigest)) throw Error('Invalid password hash');
   const failures=new Map();
+  // In-memory revocable sessions: restarting the gateway logs out every browser.
+  const active=new Map();
   const response=(res,status,body,more={})=>{
     res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','vary':'Cookie',...more});
     res.end(JSON.stringify(body));
   };
   return http.createServer(async(req,res)=>{
     const url=new URL(req.url||'/', 'http://localhost');
+    if(active.size>10000)for(const [key,expiry] of active)if(expiry<=now())active.delete(key);
     if(req.headers.origin && req.headers.origin!==origin.origin) return response(res,403,{error:'Origin denied'});
     if(url.pathname==='/finance-api/session' && req.method==='GET')
-      return response(res,200,{authenticated:parseSession(req.headers.cookie,sessionSecret,now())});
+      return response(res,200,{authenticated:parseSession(req.headers.cookie,sessionSecret,now(),active)});
     if(url.pathname==='/finance-api/login' && req.method==='POST') {
       // Browsers send Origin on same-origin POST. Refuse cross-site and nonbrowser login requests.
       if(req.headers.origin!==origin.origin) return response(res,403,{error:'Origin required'});
@@ -74,10 +77,14 @@ export function createFinanceBrowserGateway({publicOrigin,apiOrigin='http://127.
         return response(res,401,{error:'Unauthorized'});
       }
       failures.delete(peer);
-      return response(res,200,{authenticated:true},{'set-cookie':COOKIE+'='+newSession(sessionSecret,now())+'; Max-Age='+SESSION_SECONDS+'; Path=/; Secure; HttpOnly; SameSite=Strict'});
+      const token=newSession(sessionSecret,now());
+      active.set(token,now()+SESSION_SECONDS);
+      return response(res,200,{authenticated:true},{'set-cookie':COOKIE+'='+token+'; Max-Age='+SESSION_SECONDS+'; Path=/; Secure; HttpOnly; SameSite=Strict'});
     }
     if(url.pathname==='/finance-api/logout' && req.method==='POST') {
       if(req.headers.origin!==origin.origin)return response(res,403,{error:'Origin required'});
+      const token=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(COOKIE+'='))?.slice(COOKIE.length+1);
+      if(token) active.delete(token);
       return response(res,200,{authenticated:false},{'set-cookie':COOKIE+'=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict'});
     }
     if(!parseSession(req.headers.cookie,sessionSecret,now()))return response(res,401,{error:'Unauthorized'});
