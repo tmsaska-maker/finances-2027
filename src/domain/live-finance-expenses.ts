@@ -23,7 +23,7 @@ export function parseLiveFinanceExpenses(value:unknown, today:string):ReadOnlyFi
   const r=record(item);
   if(typeof r.id!=='string'||!r.id||ids.has(r.id))throw Error('Некоректний ID зобов’язання');
   ids.add(r.id);
-  if(!Object.hasOwn(names,String(r.project)))throw Error('Інтерфейс не підтримує цей напрям у бізнес-реєстрі');
+  if(!Object.prototype.hasOwnProperty.call(names,String(r.project)))throw Error('Інтерфейс не підтримує цей напрям у бізнес-реєстрі');
   if(r.currency!=='UAH')throw Error('Змішані валюти не можна підсумовувати у гривневому KPI');
   const amount=exactMinor(r.amountMinor),paid=exactMinor(r.paidMinor);
   if(amount<=0||paid>amount||r.remainingMinor!==(amount-paid).toString())throw Error('Некоректний залишок зобов’язання');
