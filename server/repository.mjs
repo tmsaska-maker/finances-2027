@@ -10,7 +10,7 @@ export function createRepository(pool) {
       if(economicType !== undefined && !kinds.has(economicType)) throw new Error('Invalid economic type');
       const result=await pool.query(`
         SELECT c.id,c.code,c.name,c.parent_id AS "parentId",
-               c.economic_type AS "economicType",c.sort_order AS "sortOrder"
+               c.economic_type AS "economicType",c.requirement_kind AS "requirementKind",c.sort_order AS "sortOrder"
           FROM finance_categories c
           JOIN project_category_access a ON a.category_id=c.id
           LEFT JOIN finance_categories p ON p.id=c.parent_id
