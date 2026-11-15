@@ -12,7 +12,7 @@ async function listen(server) {
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   return 'http://127.0.0.1:'+server.address().port;
 }
-async function close(server) { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve));}
+async function close(server) { server.closeAllConnections(); server.close(); }
 test('finance read gateway fails closed on bad deployment configuration',()=>{
  assert.throws(()=>createFinanceBrowserGateway({publicOrigin:'http://finance.example.test',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/HTTPS/);
  assert.throws(()=>createFinanceBrowserGateway({publicOrigin,apiOrigin:'http://example.org',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/loopback/);
