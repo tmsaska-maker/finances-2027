@@ -68,6 +68,22 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     assert.equal(noAutoAliases.rows[0].count,2); // only approved fixture mappings from above
     const noPersons=await pool.query("SELECT COUNT(*)::int AS count FROM finance_categories WHERE name IN ('Настя','Стас','Лікар#1','лікар#1')");
     assert.equal(noPersons.rows[0].count,0);
+    const extendedSeed=readFileSync(new URL('./sql/005_personal_classification.sql',import.meta.url),'utf8');
+    await pool.query(extendedSeed);
+    await pool.query(extendedSeed); // second run must be safe
+    const allVersions=await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+    assert.deepEqual(allVersions.rows.map(v=>v.version),[1,2,3,4,5]);
+    const children=await pool.query("SELECT parent_id,economic_type FROM finance_categories WHERE id='per_learning_conferences'");
+    assert.deepEqual(children.rows,[{parent_id:'per_learning',economic_type:'expense'}]);
+    const personallyPaid=await pool.query("SELECT economic_type FROM finance_categories WHERE id='per_owner_draws_ambulatory'");
+    assert.equal(personallyPaid.rows[0].economic_type,'non_consumption');
+    const personalIncome=await pool.query("SELECT economic_type FROM finance_categories WHERE id='per_rental_income_kyiv'");
+    assert.equal(personalIncome.rows[0].economic_type,'income');
+    const sensitive=await pool.query("SELECT COUNT(*)::int AS count FROM finance_categories WHERE name IN ('Настя','Стас')");
+    assert.equal(sensitive.rows[0].count,0);
+    const legacyPersonal=await pool.query("SELECT name FROM finance_categories WHERE id='per_beauty_services'");
+    assert.equal(legacyPersonal.rows[0].name,'Послуги краси');
+
 
 
     server = makeServer(pool, TOKEN);
@@ -83,6 +99,28 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     };
     const unauthorized = await fetch(base + '/obligations/test');
     assert.equal(unauthorized.status, 401);
+    const missingCategoryProject=await send('/categories',undefined,'GET');
+    assert.equal(missingCategoryProject.status,400);
+    const badCategoryProject=await send('/categories?project=unknown',undefined,'GET');
+    assert.equal(badCategoryProject.status,400);
+    const badCategoryType=await send('/categories?project=personal&type=nope',undefined,'GET');
+    assert.equal(badCategoryType.status,400);
+    const badDuplicateProject=await send('/categories?project=personal&project=screening',undefined,'GET');
+    assert.equal(badDuplicateProject.status,400);
+    const privateCategories=await fetch(base+'/categories?project=personal');
+    assert.equal(privateCategories.status,401);
+    const personalCategories=await send('/categories?project=personal&type=income',undefined,'GET');
+    assert.equal(personalCategories.status,200);
+    assert.equal(personalCategories.body.project,'personal');
+    assert.ok(personalCategories.body.records.some(v=>v.id==='per_rental_income_kyiv'));
+    assert.ok(personalCategories.body.records.every(v=>v.economicType==='income'));
+    assert.ok(!personalCategories.body.records.some(v=>v.id==='per_owner_draws_ambulatory'));
+    const privateMovements=await send('/categories?project=personal&type=non_consumption',undefined,'GET');
+    assert.ok(privateMovements.body.records.some(v=>v.id==='per_owner_draws_ambulatory'));
+    const screeningCategories=await send('/categories?project=screening&type=expense',undefined,'GET');
+    assert.ok(screeningCategories.body.records.some(v=>v.id==='payroll'));
+    assert.ok(!screeningCategories.body.records.some(v=>v.id==='per_food'));
+
 
     const account = { id: 'account-1', label: 'Test account', project: 'ambulatory', currency: 'UAH' };
     assert.equal((await send('/accounts', account)).status, 201);
