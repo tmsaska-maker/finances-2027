@@ -342,7 +342,7 @@ function App() {
                   navigate={navigate}
                 />
               )}
-              {screen === "expenses" && (new URLSearchParams(window.location.search).get("financeServer")==="1"
+              {screen === "expenses" && (!privateFinanceMode && new URLSearchParams(window.location.search).get("financeServer")==="1"
                 ? <ServerExpenses />
                 : <ExpensesScreen project={direction} setProject={setDirection} navigate={navigate} notify={notify} privateMode={privateFinanceMode} />
               )}
