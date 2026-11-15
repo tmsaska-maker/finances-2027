@@ -103,4 +103,7 @@ docker compose --env-file "$APP/.env" -f "$APP/compose.yaml" -f "$override" exec
 # Do not edit base compose config or any Screening40 component.
 install -m 600 "$override" "$APP/compose.finance-release.yaml"
 echo "$SHA" > "$ROOT/finance-api-deployed-sha"
+# S3 backup was verified before APPLY. Remove the redundant local backup only after
+# the live API smoke check passes. On any failure, keep it for manual recovery.
+rm -f -- "$DUMP"
 echo "Finance T011 deployment PASS. Historical transactions untouched. Screening40 not modified."
