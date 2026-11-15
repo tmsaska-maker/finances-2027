@@ -56,3 +56,17 @@ test('backup verification checksum is SSH-readable but finance dump stays privat
     script.indexOf('sha256sum "$DUMP" > "$STAGE/backup.sha256"'));
   assert.match(script,/chown "\$SUDO_USER" "\$STAGE\/backup-export\.dump"/);
 });
+
+test('live finance audit is manual, counts-only, and refuses writes',()=>{
+  const audit=readFileSync(new URL('./finance-live-readonly-audit.sh',import.meta.url),'utf8');
+  assert.match(wf,/          - audit/);
+  assert.match(wf,/if: inputs.operation == 'audit'/);
+  assert.match(wf,/finance-live-readonly-audit\.sh/);
+  assert.match(audit,/BEGIN TRANSACTION READ ONLY;/);
+  assert.match(audit,/data_rows\|accounts/);
+  assert.match(audit,/data_rows\|transactions/);
+  assert.match(audit,/data_rows\|obligations/);
+  assert.match(audit,/data_rows\|payments/);
+  assert.doesNotMatch(audit,/\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER|DROP)\s+(?:INTO|TABLE|FROM|finance_|accounts|transactions|obligations|payments)/i);
+  execFileSync('bash',['-n',new URL('./finance-live-readonly-audit.sh',import.meta.url).pathname]);
+});
