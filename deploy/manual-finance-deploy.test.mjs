@@ -34,3 +34,17 @@ test('shared existing S3 bucket is used with finance-only prefix and repo-scoped
   assert.match(wf,/OBJECT_KEY="\$BACKUP_PREFIX\//);
   assert.doesNotMatch(wf,/\.Value == "Finances2027"/);
 });
+
+test('finance deploy S3 permissions cannot write screening backups',()=>{
+  const policy=JSON.parse(readFileSync(new URL('../infra/aws/finance-s3-backup-inline-policy.json',import.meta.url),'utf8'));
+  const statements=policy.Statement;
+  assert.equal(statements.length,3);
+  for(const s of statements.filter(v=>String(v.Resource).includes('/*'))) {
+    assert.equal(s.Resource,'arn:aws:s3:::screening40-staging-backups/finance/postgresql/*');
+  }
+  assert.ok(statements.find(v=>v.Action==='s3:PutObject').Condition.StringEquals['s3:x-amz-server-side-encryption']==='AES256');
+  assert.match(wf,/--metadata "sha256=\$EXPECTED"/);
+  assert.match(wf,/\.Metadata\.sha256 == \$sha/);
+  assert.match(script,/rm -f -- "\$DUMP"/);
+  assert.ok(script.lastIndexOf('rm -f -- "$DUMP"')>script.indexOf('Finance API smoke PASS'));
+});

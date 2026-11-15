@@ -191,9 +191,9 @@ jobs:
           ACTUAL="$(sha256sum "$RUNNER_TEMP/finances-backup.dump" | cut -d ' ' -f1)"
           test "$ACTUAL" = "$EXPECTED"
           OBJECT_KEY="$BACKUP_PREFIX/${GITHUB_SHA}/${GITHUB_RUN_ID}.dump"
-          aws s3 cp "$RUNNER_TEMP/finances-backup.dump" "s3://$BACKUP_BUCKET/$OBJECT_KEY" --sse AES256 --only-show-errors
-          aws s3api head-object --bucket "$BACKUP_BUCKET" --key "$OBJECT_KEY" --output json | jq -e '
-            .ContentLength > 0 and .ServerSideEncryption == "AES256"
+          aws s3 cp "$RUNNER_TEMP/finances-backup.dump" "s3://$BACKUP_BUCKET/$OBJECT_KEY" --sse AES256 --metadata "sha256=$EXPECTED" --only-show-errors
+          aws s3api head-object --bucket "$BACKUP_BUCKET" --key "$OBJECT_KEY" --output json | jq -e --arg sha "$EXPECTED" '
+            .ContentLength > 0 and .ServerSideEncryption == "AES256" and .Metadata.sha256 == $sha
           ' >/dev/null
           printf '%s\n' "$EXPECTED" > "$RUNNER_TEMP/offsite-backup-verified.sha256"
           scp "${SSH_OPTS[@]}" "$RUNNER_TEMP/offsite-backup-verified.sha256" "$SSH_USER@$SSH_IP:/tmp/finances2027-${GITHUB_SHA}/"
