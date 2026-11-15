@@ -46,6 +46,29 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     );
     const legacy = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name='obligations' AND column_name='category'");
     assert.equal(legacy.rowCount, 1); // no rewriting or dropping existing text field
+    const seed = readFileSync(new URL('./sql/004_category_seed.sql', import.meta.url), 'utf8');
+    await pool.query(seed);
+    await pool.query(seed); // no duplicate catalogue records on repeat
+    const currentVersions = await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+    assert.deepEqual(currentVersions.rows.map(row => row.version), [1,2,3,4]);
+    const selected = await pool.query("SELECT project, category_id FROM project_category_access WHERE category_id = 'payroll' ORDER BY project");
+    assert.deepEqual(selected.rows, [{project:'ambulatory',category_id:'payroll'},{project:'screening',category_id:'payroll'}]);
+    const sharedCount=await pool.query("SELECT COUNT(*)::int AS count FROM finance_categories WHERE id='payroll'");
+    assert.equal(sharedCount.rows[0].count,1);
+    const sourceRoot=await pool.query("SELECT parent_id,name FROM finance_categories WHERE id='psy_training'");
+    assert.equal(sourceRoot.rows[0].parent_id,null);
+    const sourceChild=await pool.query("SELECT parent_id,name FROM finance_categories WHERE id='psy_training_specialisation'");
+    assert.equal(sourceChild.rows[0].parent_id,'psy_training');
+    assert.equal(sourceChild.rows[0].name,'Спеціалізація');
+    const personal=await pool.query("SELECT category_id FROM project_category_access WHERE project='personal' AND category_id='per_pets'");
+    assert.equal(personal.rowCount,1);
+    const incorrectAccess=await pool.query("SELECT category_id FROM project_category_access WHERE project='screening' AND category_id='per_pets'");
+    assert.equal(incorrectAccess.rowCount,0);
+    const noAutoAliases=await pool.query("SELECT count(*)::int AS count FROM category_source_aliases");
+    assert.equal(noAutoAliases.rows[0].count,2); // only approved fixture mappings from above
+    const noPersons=await pool.query("SELECT COUNT(*)::int AS count FROM finance_categories WHERE name IN ('Настя','Стас','Лікар#1','лікар#1')");
+    assert.equal(noPersons.rows[0].count,0);
+
 
     server = makeServer(pool, TOKEN);
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
