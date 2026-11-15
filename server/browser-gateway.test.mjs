@@ -12,7 +12,7 @@ async function listen(server) {
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   return 'http://127.0.0.1:'+server.address().port;
 }
-async function close(server) { await new Promise(resolve=>server.close(resolve));}
+async function close(server) { server.closeAllConnections(); server.close(); }
 test('finance read gateway fails closed on bad deployment configuration',()=>{
  assert.throws(()=>createFinanceBrowserGateway({publicOrigin:'http://finance.example.test',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/HTTPS/);
  assert.throws(()=>createFinanceBrowserGateway({publicOrigin,apiOrigin:'http://example.org',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/loopback/);
@@ -20,16 +20,17 @@ test('finance read gateway fails closed on bad deployment configuration',()=>{
 });
 test('browser session is cookie-only and finance bearer stays on server',async()=>{
  let upstreamCount=0;
- const upstream=(await import('node:http')).createServer((req,res)=>{
+ const upstreamRequests=[];
+ let upstream,gate;
+ try {
+ upstream=(await import('node:http')).createServer((req,res)=>{
   upstreamCount++;
-  assert.equal(req.headers.authorization,upToken);
-  assert.ok(req.url.startsWith('/categories'));
+  upstreamRequests.push({authorization:req.headers.authorization,path:req.url});
   res.setHeader('content-type','application/json');res.end(JSON.stringify({project:'personal',economicType:'expense',records:[]}));
  });
  const apiOrigin=await listen(upstream);
- const gate=createFinanceBrowserGateway({publicOrigin,apiOrigin,apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)});
- const base=await listen(gate);
- try {
+  gate=createFinanceBrowserGateway({publicOrigin,apiOrigin,apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)});
+  const base=await listen(gate);
   const anonymous=await fetch(base+'/finance-api/categories?project=personal&type=expense');
   assert.equal(anonymous.status,401);assert.equal(upstreamCount,0);
   const status=await (await fetch(base+'/finance-api/session')).json();
@@ -47,6 +48,8 @@ test('browser session is cookie-only and finance bearer stays on server',async()
   assert.equal(authenticated.authenticated,true);
   const read=await fetch(base+'/finance-api/categories?project=personal&type=expense',{headers:{cookie}});
   assert.equal(read.status,200);assert.equal(upstreamCount,1);
+  assert.equal(upstreamRequests[0].authorization,upToken);
+  assert.ok(upstreamRequests[0].path.startsWith('/categories'));
   assert.equal((await read.json()).records.length,0);
   const noPosts=await fetch(base+'/finance-api/obligations',{method:'POST',headers:{cookie,origin:publicOrigin}});
   assert.equal(noPosts.status,405);
@@ -61,7 +64,7 @@ test('browser session is cookie-only and finance bearer stays on server',async()
   assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
   const afterLogout=await fetch(base+'/finance-api/categories?project=personal',{headers:{cookie}});
   assert.equal(afterLogout.status,401);
- }finally {await close(gate);await close(upstream);}
+ }catch(error){console.error('T007 gateway browser-session assertion:',error);throw error;}finally {if(gate)await close(gate);if(upstream)await close(upstream);}
 });
 test('gateway blocks repeated wrong passwords',async()=>{
  const g=createFinanceBrowserGateway({publicOrigin,apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)});
