@@ -58,6 +58,8 @@ test('browser session is cookie-only and finance bearer stays on server',async()
   assert.equal(forged.status,401);
   const logout=await fetch(base+'/finance-api/logout',{method:'POST',headers:{cookie,origin:publicOrigin}});
   assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
+  const afterLogout=await fetch(base+'/finance-api/categories?project=personal',{headers:{cookie}});
+  assert.equal(afterLogout.status,401);
  }finally {await close(gate);await close(upstream);}
 });
 test('gateway blocks repeated wrong passwords',async()=>{
