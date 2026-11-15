@@ -61,7 +61,7 @@ test('browser session is cookie-only and finance bearer stays on server',async()
   assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
   const afterLogout=await fetch(base+'/finance-api/categories?project=personal',{headers:{cookie}});
   assert.equal(afterLogout.status,401);
- }finally {await close(gate);await close(upstream);}
+ }catch(error){console.error('T007 gateway browser-session assertion:',error);throw error;}finally {await close(gate);await close(upstream);}
 });
 test('gateway blocks repeated wrong passwords',async()=>{
  const g=createFinanceBrowserGateway({publicOrigin,apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)});
