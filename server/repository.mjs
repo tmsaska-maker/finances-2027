@@ -3,6 +3,23 @@ import { accountInput, obligationInput, transactionInput, paymentInput } from '.
 /** Parameterized queries only; server-side DB owns all financial records. */
 export function createRepository(pool) {
   return {
+    async listCategories({project, economicType}) {
+      const projects=new Set(['ambulatory','screening','psychotherapy','personal']);
+      const kinds=new Set(['expense','income','non_consumption']);
+      if(!projects.has(project)) throw new Error('Invalid project');
+      if(economicType !== undefined && !kinds.has(economicType)) throw new Error('Invalid economic type');
+      const result=await pool.query(`
+        SELECT c.id,c.code,c.name,c.parent_id AS "parentId",
+               c.economic_type AS "economicType",c.requirement_kind AS "requirementKind",c.sort_order AS "sortOrder"
+          FROM finance_categories c
+          JOIN project_category_access a ON a.category_id=c.id
+          LEFT JOIN finance_categories p ON p.id=c.parent_id
+         WHERE a.project=$1 AND a.enabled=true AND c.active=true
+           AND ($2::text IS NULL OR c.economic_type=$2)
+         ORDER BY COALESCE(p.name,c.name),c.parent_id NULLS FIRST,c.sort_order,c.name,c.id
+      `,[project,economicType??null]);
+      return {project,economicType:economicType??null,records:result.rows};
+    },
     async addAccount(value) {
       const x = accountInput(value);
       await pool.query('INSERT INTO accounts(id,project,currency,label) VALUES($1,$2,$3,$4)',[x.id,x.project,x.currency,x.label]);

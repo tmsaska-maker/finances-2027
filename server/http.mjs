@@ -10,6 +10,18 @@ export function makeServer(pool, token) {
     if(req.headers.authorization!==`Bearer ${token}`) return send(401,{error:'Unauthorized'});
     try {
       if(req.method==='GET' && req.url==='/health') return send(200,{ok:true});
+      if(req.method==='GET' && req.url?.startsWith('/categories?')) {
+        const parsed=new URL(req.url,'http://localhost');
+        if(parsed.pathname !== '/categories' || [...parsed.searchParams.keys()].some(k=>!['project','type'].includes(k))
+            || parsed.searchParams.getAll('project').length!==1 || parsed.searchParams.getAll('type').length>1)
+          return send(400,{error:'Invalid category filters'});
+        return send(200,await repo.listCategories({
+          project:parsed.searchParams.get('project'),
+          economicType:parsed.searchParams.has('type')?parsed.searchParams.get('type'):undefined,
+        }));
+      }
+      if(req.method==='GET' && req.url==='/categories') return send(400,{error:'Project required'});
+
       if(req.method==='GET' && req.url==='/obligations') return send(200,await repo.listObligations());
       if(req.method==='GET' && /^\/obligations\/[a-zA-Z0-9_-]{1,120}$/.test(req.url||'')) {
         const result=await repo.getObligation(req.url.slice('/obligations/'.length));

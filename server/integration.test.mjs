@@ -17,8 +17,92 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     const metadata = readFileSync(new URL('./sql/002_expense_metadata.sql', import.meta.url), 'utf8');
     await pool.query(metadata);
     await pool.query(metadata);
-    const version = await pool.query('SELECT version FROM schema_migrations');
-    assert.deepEqual(version.rows.map(row => row.version), [1,2]);
+    const catalogue = readFileSync(new URL('./sql/003_category_catalog.sql', import.meta.url), 'utf8');
+    await pool.query(catalogue);
+    await pool.query(catalogue); // additive and idempotent, including trigger
+    const version = await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+    assert.deepEqual(version.rows.map(row => row.version), [1,2,3]);
+
+    // One category can be shared across business directions without copying its identity.
+    await pool.query("INSERT INTO finance_categories(id,code,name,economic_type) VALUES ('payroll','payroll','Зарплата персоналу','expense')");
+    await pool.query("INSERT INTO finance_categories(id,code,name,parent_id,economic_type) VALUES ('doctor','doctor','Сімейний лікар','payroll','expense')");
+    await pool.query("INSERT INTO project_category_access(project,category_id) VALUES ('ambulatory','payroll'),('screening','payroll'),('ambulatory','doctor'),('screening','doctor')");
+    await pool.query("INSERT INTO category_source_aliases(project,source_file,source_label,category_id,reviewed_by) VALUES ('ambulatory','legacy_ambulatory','Зарплата персоналу','payroll','migration-review'),('screening','legacy_screening','Зарплата персоналу','payroll','migration-review')");
+    const visible = await pool.query("SELECT project,category_id FROM project_category_access WHERE category_id='payroll' ORDER BY project");
+    assert.deepEqual(visible.rows, [{project:'ambulatory',category_id:'payroll'},{project:'screening',category_id:'payroll'}]);
+    const aliases = await pool.query("SELECT COUNT(*)::int AS count FROM category_source_aliases WHERE category_id='payroll'");
+    assert.equal(aliases.rows[0].count, 2);
+    await assert.rejects(
+      pool.query("INSERT INTO category_source_aliases(project,source_file,source_label,category_id,reviewed_by) VALUES ('personal','legacy_personal','Зарплата персоналу','payroll','migration-review')"),
+      error => error.code === '23503',
+    );
+    await assert.rejects(
+      pool.query("INSERT INTO finance_categories(id,code,name,parent_id,economic_type) VALUES ('grandchild','grandchild','Не дозволено','doctor','expense')"),
+      error => error.code === '23514',
+    );
+    await assert.rejects(
+      pool.query("INSERT INTO finance_categories(id,code,name,parent_id,economic_type) VALUES ('wrong-type','wrong-type','Не дозволено','payroll','income')"),
+      error => error.code === '23514',
+    );
+    const legacy = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name='obligations' AND column_name='category'");
+    assert.equal(legacy.rowCount, 1); // no rewriting or dropping existing text field
+    const seed = readFileSync(new URL('./sql/004_category_seed.sql', import.meta.url), 'utf8');
+    await pool.query(seed);
+    await pool.query(seed); // no duplicate catalogue records on repeat
+    const currentVersions = await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+    assert.deepEqual(currentVersions.rows.map(row => row.version), [1,2,3,4]);
+    const selected = await pool.query("SELECT project, category_id FROM project_category_access WHERE category_id = 'payroll' ORDER BY project");
+    assert.deepEqual(selected.rows, [{project:'ambulatory',category_id:'payroll'},{project:'screening',category_id:'payroll'}]);
+    const sharedCount=await pool.query("SELECT COUNT(*)::int AS count FROM finance_categories WHERE id='payroll'");
+    assert.equal(sharedCount.rows[0].count,1);
+    const sourceRoot=await pool.query("SELECT parent_id,name FROM finance_categories WHERE id='psy_training'");
+    assert.equal(sourceRoot.rows[0].parent_id,null);
+    const sourceChild=await pool.query("SELECT parent_id,name FROM finance_categories WHERE id='psy_training_specialisation'");
+    assert.equal(sourceChild.rows[0].parent_id,'psy_training');
+    assert.equal(sourceChild.rows[0].name,'Спеціалізація');
+    const personal=await pool.query("SELECT category_id FROM project_category_access WHERE project='personal' AND category_id='per_pets'");
+    assert.equal(personal.rowCount,1);
+    const incorrectAccess=await pool.query("SELECT category_id FROM project_category_access WHERE project='screening' AND category_id='per_pets'");
+    assert.equal(incorrectAccess.rowCount,0);
+    const noAutoAliases=await pool.query("SELECT count(*)::int AS count FROM category_source_aliases");
+    assert.equal(noAutoAliases.rows[0].count,2); // only approved fixture mappings from above
+    const noPersons=await pool.query("SELECT COUNT(*)::int AS count FROM finance_categories WHERE name IN ('Настя','Стас','Лікар#1','лікар#1')");
+    assert.equal(noPersons.rows[0].count,0);
+    const extendedSeed=readFileSync(new URL('./sql/005_personal_classification.sql',import.meta.url),'utf8');
+    await pool.query(extendedSeed);
+    await pool.query(extendedSeed); // second run must be safe
+    const allVersions=await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+    assert.deepEqual(allVersions.rows.map(v=>v.version),[1,2,3,4,5]);
+    const children=await pool.query("SELECT parent_id,economic_type FROM finance_categories WHERE id='per_learning_conferences'");
+    assert.deepEqual(children.rows,[{parent_id:'per_learning',economic_type:'expense'}]);
+    const personallyPaid=await pool.query("SELECT economic_type FROM finance_categories WHERE id='per_owner_draws_ambulatory'");
+    assert.equal(personallyPaid.rows[0].economic_type,'non_consumption');
+    const personalIncome=await pool.query("SELECT economic_type FROM finance_categories WHERE id='per_rental_income_kyiv'");
+    assert.equal(personalIncome.rows[0].economic_type,'income');
+    const sensitive=await pool.query("SELECT COUNT(*)::int AS count FROM finance_categories WHERE name IN ('Настя','Стас')");
+    assert.equal(sensitive.rows[0].count,0);
+    const legacyPersonal=await pool.query("SELECT name FROM finance_categories WHERE id='per_beauty_services'");
+    assert.equal(legacyPersonal.rows[0].name,'Послуги краси');
+    const historical=readFileSync(new URL('./sql/006_approved_category_aliases.sql',import.meta.url),'utf8');
+    await pool.query(historical);
+    await pool.query(historical);
+    const versions=await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+    assert.deepEqual(versions.rows.map(v=>v.version),[1,2,3,4,5,6]);
+    const rent=await pool.query("SELECT source_label, category_id FROM category_source_aliases WHERE project='ambulatory' AND source_label LIKE 'Оренда приміщення %' ORDER BY source_label");
+    assert.equal(rent.rowCount,2);
+    assert.ok(rent.rows.every(r=>r.category_id==='amb_rent'));
+    const bank=await pool.query("SELECT category_id FROM category_source_aliases WHERE project='screening' AND source_label='Банк %'");
+    assert.equal(bank.rows[0].category_id,'scr_financial_payment_fees');
+    const requirements=await pool.query("SELECT id,requirement_kind FROM finance_categories WHERE id IN ('psy_training_main_group','psy_training_specialisation') ORDER BY id");
+    assert.deepEqual(requirements.rows,[
+      {id:'psy_training_main_group',requirement_kind:'required'},
+      {id:'psy_training_specialisation',requirement_kind:'optional'}
+    ]);
+    const legacyUnchanged=await pool.query("SELECT COUNT(*)::int AS count FROM obligations");
+    assert.equal(legacyUnchanged.rows[0].count,0);
+
+
+
 
     server = makeServer(pool, TOKEN);
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -33,6 +117,28 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     };
     const unauthorized = await fetch(base + '/obligations/test');
     assert.equal(unauthorized.status, 401);
+    const missingCategoryProject=await send('/categories',undefined,'GET');
+    assert.equal(missingCategoryProject.status,400);
+    const badCategoryProject=await send('/categories?project=unknown',undefined,'GET');
+    assert.equal(badCategoryProject.status,400);
+    const badCategoryType=await send('/categories?project=personal&type=nope',undefined,'GET');
+    assert.equal(badCategoryType.status,400);
+    const badDuplicateProject=await send('/categories?project=personal&project=screening',undefined,'GET');
+    assert.equal(badDuplicateProject.status,400);
+    const privateCategories=await fetch(base+'/categories?project=personal');
+    assert.equal(privateCategories.status,401);
+    const personalCategories=await send('/categories?project=personal&type=income',undefined,'GET');
+    assert.equal(personalCategories.status,200);
+    assert.equal(personalCategories.body.project,'personal');
+    assert.ok(personalCategories.body.records.some(v=>v.id==='per_rental_income_kyiv'));
+    assert.ok(personalCategories.body.records.every(v=>v.economicType==='income'));
+    assert.ok(!personalCategories.body.records.some(v=>v.id==='per_owner_draws_ambulatory'));
+    const privateMovements=await send('/categories?project=personal&type=non_consumption',undefined,'GET');
+    assert.ok(privateMovements.body.records.some(v=>v.id==='per_owner_draws_ambulatory'));
+    const screeningCategories=await send('/categories?project=screening&type=expense',undefined,'GET');
+    assert.ok(screeningCategories.body.records.some(v=>v.id==='payroll'));
+    assert.ok(!screeningCategories.body.records.some(v=>v.id==='per_food'));
+
 
     const account = { id: 'account-1', label: 'Test account', project: 'ambulatory', currency: 'UAH' };
     assert.equal((await send('/accounts', account)).status, 201);
