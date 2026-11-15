@@ -48,3 +48,11 @@ test('finance deploy S3 permissions cannot write screening backups',()=>{
   assert.match(script,/rm -f -- "\$DUMP"/);
   assert.ok(script.lastIndexOf('rm -f -- "$DUMP"')>script.indexOf('Finance API smoke PASS'));
 });
+
+test('backup verification checksum is SSH-readable but finance dump stays private',()=>{
+  assert.match(script,/chown "\$\{SUDO_USER:\?SUDO_USER required\}" "\$STAGE\/backup\.sha256"/);
+  assert.match(script,/chmod 600 "\$STAGE\/backup\.sha256"/);
+  assert.ok(script.indexOf('chown "${SUDO_USER:?SUDO_USER required}" "$STAGE/backup.sha256"') >
+    script.indexOf('sha256sum "$DUMP" > "$STAGE/backup.sha256"'));
+  assert.match(script,/chown "\$SUDO_USER" "\$STAGE\/backup-export\.dump"/);
+});
