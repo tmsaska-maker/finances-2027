@@ -54,7 +54,8 @@ test('browser session is cookie-only and finance bearer stays on server',async()
   assert.equal(unknown.status,404);
   const old=await fetch(base+'/finance-api/categories?project=personal&admin=1',{headers:{cookie}});
   assert.equal(old.status,404);
-  const forged=await fetch(base+'/finance-api/categories?project=personal',{headers:{cookie:cookie.replace(/.$/,'x')}});
+  const forgedToken=cookie.split(';')[0].replace(/.$/,'x');
+  const forged=await fetch(base+'/finance-api/categories?project=personal',{headers:{cookie:forgedToken}});
   assert.equal(forged.status,401);
   const logout=await fetch(base+'/finance-api/logout',{method:'POST',headers:{cookie,origin:publicOrigin}});
   assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
