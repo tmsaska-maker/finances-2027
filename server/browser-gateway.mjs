@@ -77,8 +77,9 @@ export function createFinanceBrowserGateway({publicOrigin,apiOrigin='http://127.
         return response(res,401,{error:'Unauthorized'});
       }
       failures.delete(peer);
-      const token=newSession(sessionSecret,now());
-      active.set(token,now()+SESSION_SECONDS);
+      const issuedAt=now();
+      const token=newSession(sessionSecret,issuedAt);
+      active.set(token,issuedAt+SESSION_SECONDS);
       return response(res,200,{authenticated:true},{'set-cookie':COOKIE+'='+token+'; Max-Age='+SESSION_SECONDS+'; Path=/; Secure; HttpOnly; SameSite=Strict'});
     }
     if(url.pathname==='/finance-api/logout' && req.method==='POST') {
