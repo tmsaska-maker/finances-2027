@@ -83,6 +83,24 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     assert.equal(sensitive.rows[0].count,0);
     const legacyPersonal=await pool.query("SELECT name FROM finance_categories WHERE id='per_beauty_services'");
     assert.equal(legacyPersonal.rows[0].name,'Послуги краси');
+    const historical=readFileSync(new URL('./sql/006_approved_category_aliases.sql',import.meta.url),'utf8');
+    await pool.query(historical);
+    await pool.query(historical);
+    const versions=await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+    assert.deepEqual(versions.rows.map(v=>v.version),[1,2,3,4,5,6]);
+    const rent=await pool.query("SELECT source_label, category_id FROM category_source_aliases WHERE project='ambulatory' AND source_label LIKE 'Оренда приміщення %' ORDER BY source_label");
+    assert.equal(rent.rowCount,2);
+    assert.ok(rent.rows.every(r=>r.category_id==='amb_rent'));
+    const bank=await pool.query("SELECT category_id FROM category_source_aliases WHERE project='screening' AND source_label='Банк %'");
+    assert.equal(bank.rows[0].category_id,'scr_financial_payment_fees');
+    const requirements=await pool.query("SELECT id,requirement_kind FROM finance_categories WHERE id IN ('psy_training_main_group','psy_training_specialisation') ORDER BY id");
+    assert.deepEqual(requirements.rows,[
+      {id:'psy_training_main_group',requirement_kind:'required'},
+      {id:'psy_training_specialisation',requirement_kind:'optional'}
+    ]);
+    const legacyUnchanged=await pool.query("SELECT COUNT(*)::int AS count FROM obligations");
+    assert.equal(legacyUnchanged.rows[0].count,0);
+
 
 
 
