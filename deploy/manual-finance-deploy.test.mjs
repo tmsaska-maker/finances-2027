@@ -105,7 +105,7 @@ test('T007 route diagnostics emit only allowlisted classifications, never domain
   assert.match(edge,/classification="other_process"/);
   assert.match(edge,/caddy_server_blocks=%d/);
   assert.match(edge,/caddy_route_count=%d/);
-  assert.match(edge,/caddy_finance_gateway_8092/);
+  assert.match(edge,/finance_gateway_8092/);
   assert.match(edge,/caddy adapt --config \/etc\/caddy\/Caddyfile --adapter caddyfile 2>\/dev\/null/);
   assert.doesNotMatch(edge,/print\(config\)|print\(servers\)|print\(http\)|print\(dial\)|print\(line\)/);
   execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
