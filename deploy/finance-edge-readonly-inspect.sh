@@ -200,4 +200,40 @@ for name,headers in profiles:
     print("gateway8092_session_"+name+"_status="+status)
     print("gateway8092_session_"+name+"_response_class="+bodyclass)
 ' 2>/dev/null || echo "gateway_forensics=unavailable"
+# Determine Docker owner of host port 8092 without printing container IDs, image names,
+# process arguments, labels, paths or environment variables.
+python3 -c '
+import json,subprocess
+def docker(*args):
+    try:
+        p=subprocess.run(["docker",*args],capture_output=True,text=True,timeout=6,check=False)
+        return p.stdout.strip() if p.returncode==0 else ""
+    except (OSError,subprocess.TimeoutExpired):return ""
+ids=docker("ps","-q").splitlines()
+matches=[]
+for cid in ids:
+    ports=docker("inspect","--format","{{json .HostConfig.PortBindings}}",cid)
+    try: data=json.loads(ports)
+    except (ValueError,TypeError):continue
+    if not isinstance(data,dict):continue
+    if not any(str(entry.get("HostPort",""))=="8092" for bindings in data.values() if isinstance(bindings,list) for entry in bindings if isinstance(entry,dict)):continue
+    project=docker("inspect","--format","{{index .Config.Labels \"com.docker.compose.project\"}}",cid)
+    service=docker("inspect","--format","{{index .Config.Labels \"com.docker.compose.service\"}}",cid)
+    image=docker("inspect","--format","{{.Config.Image}}",cid).lower()
+    if project=="finances2027" or project.startswith("finances2027-"):ownership="finance_compose"
+    elif "screening" in project.lower():ownership="screening_compose"
+    elif project in ("","<no value>"):ownership="unlabeled_container"
+    else:ownership="other_compose"
+    if "gateway" in service.lower() or "gateway" in image:role="gateway"
+    elif service=="api" or "finances2027-api" in image:role="api"
+    elif "web" in service.lower() or "frontend" in service.lower():role="web"
+    else:role="other"
+    matches.append((ownership,role))
+print("docker_host8092_owner_count="+str(len(matches)))
+if len(matches)==1:
+    print("docker_host8092_project_class="+matches[0][0])
+    print("docker_host8092_service_class="+matches[0][1])
+elif len(matches)>1: print("docker_host8092_project_class=ambiguous")
+else: print("docker_host8092_project_class=unidentified")
+' 2>/dev/null || echo "docker_host8092_probe=unavailable"
 echo "FINANCE_EDGE_READONLY_INSPECTION_END"
