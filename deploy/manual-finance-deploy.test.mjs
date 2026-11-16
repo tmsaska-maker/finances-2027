@@ -156,3 +156,22 @@ test('T007 container owner check is strictly read-only and prints only whitelist
   execFileSync('python3',['-c','import sys;compile(sys.stdin.read(),"<docker-owner>","exec")'],{input:python,encoding:'utf8'});
   execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
 });
+
+test('T007 gateway runtime provenance is inspect-only and never logs raw Docker metadata',()=>{
+  const edge=readFileSync(new URL('./finance-edge-readonly-inspect.sh',import.meta.url),'utf8');
+  const segment=edge.split('# Runtime provenance, strictly limited')[1]||'';
+  assert.ok(segment.length>1800);
+  assert.match(segment,/finance_gateway_runtime_class=/);
+  assert.match(segment,/finance_gateway_command_class=/);
+  assert.match(segment,/finance_gateway_compose_config_class=/);
+  assert.match(segment,/finance_gateway_app_mount_class=/);
+  assert.match(segment,/finance_gateway_anonymous_denial_reason_class=/);
+  assert.match(segment,/if labels\.get\("com\.docker\.compose\.project"\)!="finances2027"/);
+  assert.match(segment,/labels\.get\("com\.docker\.compose\.service"\)!="gateway"/);
+  assert.doesNotMatch(segment,/print\((?:obj|cfg|cmd|entry|command|labels|source|mounts|raw|payload|err|cid|ids)\)/);
+  assert.doesNotMatch(segment,/docker\s+(?:exec|run|restart|kill|stop|rm)|\.Config\.Env|\.Env\b|method="POST"/);
+  const body=segment.match(/python3 -c '\n([\s\S]*?)\n' 2>\/dev\/null/)?.[1];
+  assert.ok(body);
+  execFileSync('python3',['-c','import sys;compile(sys.stdin.read(),"<gateway-runtime>","exec")'],{input:body,encoding:'utf8'});
+  execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
+});
