@@ -175,3 +175,19 @@ test('T007 gateway runtime provenance is inspect-only and never logs raw Docker 
   execFileSync('python3',['-c','import sys;compile(sys.stdin.read(),"<gateway-runtime>","exec")'],{input:body,encoding:'utf8'});
   execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
 });
+
+test('T007 gateway candidate is package-only and never reaches Lightsail or Screening40',()=>{
+ const gateway=readFileSync(new URL('../.github/workflows/manual-private-finance-gateway-build.yml',import.meta.url),'utf8');
+ const dockerfile=readFileSync(new URL('../server/Dockerfile.gateway',import.meta.url),'utf8');
+ assert.match(gateway,/^on:\n  workflow_dispatch:/m);
+ assert.match(gateway,/github.ref == 'refs\/heads\/main'/);
+ assert.match(gateway,/node --test.*browser-gateway\.test\.mjs/);
+ assert.match(gateway,/docker build -f server\/Dockerfile\.gateway/);
+ assert.match(gateway,/--network none --read-only --cap-drop ALL/);
+ assert.match(gateway,/actions\/upload-artifact@v4/);
+ assert.doesNotMatch(gateway,/aws-actions|aws lightsail|ssh\s|scp\s|docker\s+(?:push|load)|docker compose up|--network host|VITE_FINANCES_PRIVATE_UI/);
+ assert.match(dockerfile,/COPY browser-gateway\.mjs browser-gateway-main\.mjs/);
+ assert.match(dockerfile,/USER node/);
+ assert.doesNotMatch(dockerfile,/FINANCES_API_TOKEN|FINANCES_SESSION_SECRET|FINANCES_OWNER_PASSWORD_HASH|COPY\s+\.\s+\.|COPY\s+\.env/);
+ assert.doesNotMatch(dockerfile,/EXPOSE 8091/);
+});
