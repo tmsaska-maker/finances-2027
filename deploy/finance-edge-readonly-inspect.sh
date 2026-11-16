@@ -135,4 +135,69 @@ for name,url,is_session in tests:
     print("anonymous_"+name+"_status="+code)
     if is_session: print("anonymous_gateway8092_session_class="+session)
 ' 2>/dev/null || echo "anonymous_probe=unavailable"
+# Diagnostics of *existing* 8092 service: never log raw process args, response bodies, IPs, PIDs or secrets.
+# Session GET variations mimic a normal reverse proxy; all are anonymous, read-only.
+python3 -c '
+import json,re,subprocess,urllib.request,urllib.error
+PORT=8092
+try:
+    output=subprocess.run(["ss","-lntpH"],capture_output=True,text=True,timeout=4,check=False).stdout
+except (OSError,subprocess.TimeoutExpired): output=""
+matches=[line for line in output.splitlines() if len(line.split())>=4 and re.search(r":"+str(PORT)+r"$",line.split()[3])]
+pids=set()
+for line in matches:
+    pids.update(int(x) for x in re.findall(r"pid=(\d+)",line))
+types=set()
+locations=set()
+for pid in pids:
+    try:
+        with open("/proc/%d/cmdline"%pid,"rb") as f: args=[x.decode("utf-8","replace") for x in f.read(16384).split(b"\x00") if x]
+        path=__import__("os").readlink("/proc/%d/cwd"%pid)
+    except (OSError,PermissionError):continue
+    joined=" ".join(args).lower()
+    if "browser-gateway-main.mjs" in joined:types.add("proposed_finance_gateway")
+    elif "gateway" in joined:types.add("other_gateway")
+    elif "node" in joined:types.add("other_node")
+    elif "docker-proxy" in joined:types.add("docker_proxy")
+    else:types.add("other")
+    if path.startswith("/opt/finances-2027/"):locations.add("finance_directory")
+    elif path.startswith("/opt/screening40/"):locations.add("screening_directory")
+    else:locations.add("other_directory")
+def classify(items):
+    return list(items)[0] if len(items)==1 else ("mixed" if len(items)>1 else "unavailable")
+print("tcp_port_8092_identity="+classify(types))
+print("tcp_port_8092_workdir="+classify(locations))
+# No credentials or cookies. Do not allow redirects, which could leak to unrelated routes.
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*args,**kwargs):return None
+opener=urllib.request.build_opener(NoRedirect)
+profiles=[
+ ("local",{}),
+ ("expected_host",{"Host":"finances.screening40.com.ua"}),
+ ("expected_https_proxy",{"Host":"finances.screening40.com.ua","X-Forwarded-Proto":"https","Origin":"https://finances.screening40.com.ua"})
+]
+for name,headers in profiles:
+    status="unavailable"
+    bodyclass="unavailable"
+    try:
+        req=urllib.request.Request("http://127.0.0.1:8092/finance-api/session",headers={"Accept":"application/json",**headers},method="GET")
+        try:
+            res=opener.open(req,timeout=3)
+        except urllib.error.HTTPError as e:
+            res=e
+        with res:
+            status=str(res.status)
+            # Bounded read used strictly for response classification; body never printed.
+            raw=res.read(512)
+            try:
+                parsed=json.loads(raw)
+                if isinstance(parsed,dict) and parsed.get("authenticated") is False:bodyclass="anonymous_session"
+                elif isinstance(parsed,dict) and parsed.get("authenticated") is True:bodyclass="unexpected_authenticated"
+                elif isinstance(parsed,dict) and isinstance(parsed.get("error"),str):bodyclass="json_error"
+                else:bodyclass="other_json"
+            except (ValueError,UnicodeError):bodyclass="non_json"
+    except (OSError,ValueError,TimeoutError):pass
+    print("gateway8092_session_"+name+"_status="+status)
+    print("gateway8092_session_"+name+"_response_class="+bodyclass)
+' 2>/dev/null || echo "gateway_forensics=unavailable"
 echo "FINANCE_EDGE_READONLY_INSPECTION_END"
