@@ -751,3 +751,24 @@ h1 { font-size: 25px; letter-spacing: -.8px; margin: 0; font-weight: 650; line-h
 .expense-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;}.expense-modal-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:14px;border-top:1px solid var(--line);margin-top:2px;}.expense-callout{display:flex;flex-direction:column;gap:6px;background:#f2f7f5;border:1px solid #dcebe4;padding:14px;border-radius:9px;color:#426457;font-size:10px;}.expense-callout strong{font-size:13px;color:#163e33;}
 @media(max-width:1100px){.expenses-summary{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:760px){.expenses-summary{grid-template-columns:repeat(2,minmax(0,1fr));}.expense-kpi{padding:13px;}.expense-kpi>strong{font-size:16px;}.expense-toolbar{flex-direction:column;align-items:stretch;}.expense-filters{width:100%;}.expense-filters input{min-width:0;flex:1;max-width:none;}.expense-filters select{max-width:130px;}.expense-pending-row{flex-wrap:wrap;}.expense-form-grid{grid-template-columns:1fr;}.expense-modal{padding:17px;}}
+
+/* T007 private sign-in only; existing Figma workspace styles stay unchanged. */
+.finance-auth-page { min-height:100vh; display:flex; justify-content:center; align-items:center; padding:28px; background:#f5f7f6; color:#162522; }
+.finance-auth-card { width:100%; max-width:440px; padding:34px; border:1px solid #dfe6e3; background:#fff; border-radius:16px; box-shadow:0 16px 48px #203f3312; display:grid; gap:16px; }
+.finance-auth-brand { display:flex; align-items:center; gap:12px; font-size:17px; }
+.finance-auth-brand small { font-size:12px; color:#697874; }
+.finance-auth-mark { width:34px; height:34px; display:grid; place-items:center; font-weight:700; border-radius:9px; color:#7bd0c3; background:#153f3a; }
+.finance-auth-shield { width:42px; height:42px; border-radius:50%; background:#e9f4f1; color:#177d72; display:grid; place-items:center; font-size:20px; }
+.finance-auth-card h1 { font-size:23px; line-height:1.25; margin:0; }
+.finance-auth-card p { font-size:14px; color:#697874; margin:0; line-height:1.6; }
+.finance-auth-card form { display:grid; gap:10px; }
+.finance-auth-card label { font-weight:600; font-size:13px; }
+.finance-auth-card input { border:1px solid #dfe6e3; border-radius:8px; padding:12px 14px; min-width:0; width:100%; }
+.finance-auth-card form button { width:100%; margin-top:4px; }
+.finance-auth-card .finance-auth-error { color:#ad3030; font-weight:600; }
+.finance-auth-card > small { color:#697874; line-height:1.5; }
+.finance-logout { display:flex; align-items:center; gap:10px; width:100%; padding:10px; border:0; background:transparent; cursor:pointer; border-radius:8px; color:#0f6159; font-weight:600; }
+.finance-logout:hover { background:#e2e9e6; }
+.finance-private-pending { padding:28px; display:grid; gap:16px; justify-items:start; max-width:660px; }
+.finance-private-pending h2 { margin:0; font-size:21px; }
+.finance-private-pending p { margin:0; color:#697874; line-height:1.6; }
