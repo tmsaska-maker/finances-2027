@@ -11,6 +11,7 @@ on:
         options:
           - preflight
           - audit
+          - inspect-edge
           - deploy
       approved_sha:
         description: "For deploy: exact 40-character main SHA; empty for preflight"
@@ -173,6 +174,9 @@ jobs:
           if [[ "$OPERATION" == audit ]]; then
             scp "${SSH_OPTS[@]}" deploy/finance-live-readonly-audit.sh "$SSH_USER@$SSH_IP:$STAGE/finance-live-readonly-audit.sh"
           fi
+          if [[ "$OPERATION" == inspect-edge ]]; then
+            scp "${SSH_OPTS[@]}" deploy/finance-edge-readonly-inspect.sh "$SSH_USER@$SSH_IP:$STAGE/finance-edge-readonly-inspect.sh"
+          fi
           if [[ "$OPERATION" == deploy ]]; then
             scp "${SSH_OPTS[@]}" server/sql/00{3,4,5,6}_*.sql "$SSH_USER@$SSH_IP:$STAGE/sql/"
             scp "${SSH_OPTS[@]}" "finances-api-${GITHUB_SHA}.tar.gz" "$SSH_USER@$SSH_IP:$STAGE/"
@@ -188,6 +192,13 @@ jobs:
         run: |
           SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
           ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/finance-live-readonly-audit.sh'"
+
+      - name: Inspect shared Lightsail HTTPS edge (read-only, no config content)
+        if: inputs.operation == 'inspect-edge'
+        shell: bash
+        run: |
+          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/finance-edge-readonly-inspect.sh'"
 
       - name: Finance backup and isolated restore test
         if: inputs.operation == 'deploy'
