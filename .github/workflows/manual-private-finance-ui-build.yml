@@ -1,0 +1,48 @@
+name: T007 private finance UI - package only (NO DEPLOY)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check selected branch and Figma source
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test -s src/App.tsx
+          test -s src/index.css
+          test -s src/PrivateFinanceGate.tsx
+          test -s src/domain/live-finance-expenses.ts
+      - name: Install locked UI dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify React UI types and finance domain
+        run: |
+          npm run typecheck
+          npm run typecheck:domain
+          npm test
+      - name: Build private read-only finance UI
+        env:
+          VITE_FINANCES_PRIVATE_UI: 'true'
+        run: npm run build
+      - name: Confirm separate PRIVATE artifact (no deploy)
+        run: |
+          set -euo pipefail
+          test -s dist/index.html
+          printf '%s\n' "${GITHUB_SHA}" > dist/revision.txt
+          tar -czf "finances2027-private-ui-${GITHUB_SHA}.tar.gz" -C dist .
+      - name: Archive private UI only
+        uses: actions/upload-artifact@v4
+        with:
+          name: finances2027-private-ui
+          path: finances2027-private-ui-*.tar.gz
+          retention-days: 7

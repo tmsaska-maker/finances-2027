@@ -41,7 +41,9 @@ jobs:
           fi
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Build UI
+      - name: Build PUBLIC demo only (never private finance UI)
+        env:
+          VITE_FINANCES_PRIVATE_UI: 'false'
         run: npm run build
       - name: Pack static website
         run: tar -czf finances2027-dist.tar.gz -C dist .
