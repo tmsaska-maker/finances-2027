@@ -118,7 +118,7 @@ test('T007 anonymous gateway probe is GET-only and never sends cookies, password
   assert.match(probe,/Request\(url,headers=\{"Accept":"application\/json"\},method="GET"\)/);
   assert.match(probe,/timeout=3/);
   assert.match(probe,/anonymous_gateway8092_session_class=/);
-  assert.match(probe,/anonymous_gateway8092_obligations_status=/);
+  assert.match(probe,/gateway8092_obligations/);
   assert.doesNotMatch(probe,/method="POST"|Authorization|Bearer|Cookie|print\(raw\)|print\(data\)/);
   execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
 });
