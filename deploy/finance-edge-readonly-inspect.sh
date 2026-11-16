@@ -236,4 +236,67 @@ if len(matches)==1:
 elif len(matches)>1: print("docker_host8092_project_class=ambiguous")
 else: print("docker_host8092_project_class=unidentified")
 ' 2>/dev/null || echo "docker_host8092_probe=unavailable"
+# Runtime provenance, strictly limited to the uniquely matched finance gateway container.
+# docker inspect is read-only. Capture fields in memory but print only enum classifications.
+python3 -c '
+import json,subprocess,urllib.request,urllib.error
+def run(*args):
+    try:
+        p=subprocess.run(list(args),capture_output=True,text=True,timeout=8,check=False)
+        return p.stdout if p.returncode==0 else ""
+    except (OSError,subprocess.TimeoutExpired):return ""
+ids=run("docker","ps","-q").splitlines()
+matching=[]
+for cid in ids:
+    try: obj=json.loads(run("docker","inspect","--type","container",cid))[0]
+    except (ValueError,IndexError,TypeError):continue
+    ports=obj.get("HostConfig",{}).get("PortBindings",{}) or {}
+    if not any(str(row.get("HostPort"))=="8092" for rows in ports.values() if isinstance(rows,list) for row in rows if isinstance(row,dict)):continue
+    labels=obj.get("Config",{}).get("Labels",{}) or {}
+    if labels.get("com.docker.compose.project")!="finances2027" or labels.get("com.docker.compose.service")!="gateway":continue
+    matching.append(obj)
+if len(matching)!=1:
+    print("finance_gateway_runtime_class=not_unique")
+else:
+    obj=matching[0]
+    cfg=obj.get("Config",{}) or {}
+    cmd=cfg.get("Cmd") or []
+    entry=cfg.get("Entrypoint") or []
+    command=" ".join(str(v) for v in ([entry] if isinstance(entry,str) else entry)+([cmd] if isinstance(cmd,str) else cmd)).lower()
+    if "browser-gateway-main.mjs" in command: kind="repo_gateway_main"
+    elif "gateway" in command:kind="other_gateway_command"
+    elif "node" in command:kind="node_other_command"
+    else:kind="other_command"
+    labels=cfg.get("Labels",{}) or {}
+    source=str(labels.get("com.docker.compose.project.config_files",""))
+    if source.startswith("/opt/finances-2027/"):config="finance_directory"
+    elif source: config="other_directory"
+    else:config="unlabeled"
+    mounts=obj.get("Mounts",[]) or []
+    if any(str(m.get("Destination","")).startswith("/app") for m in mounts if isinstance(m,dict)):mount="app_mount_present"
+    else:mount="no_app_mount"
+    print("finance_gateway_runtime_class=identified")
+    print("finance_gateway_command_class="+kind)
+    print("finance_gateway_compose_config_class="+config)
+    print("finance_gateway_app_mount_class="+mount)
+# Classify the opaque 403 body with an exact fixed allowlist; do not print raw errors.
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*args,**kwargs):return None
+opener=urllib.request.build_opener(NoRedirect)
+reason="unavailable"
+try:
+    req=urllib.request.Request("http://127.0.0.1:8092/finance-api/session",headers={"Accept":"application/json"},method="GET")
+    try:res=opener.open(req,timeout=3)
+    except urllib.error.HTTPError as exc:res=exc
+    with res:
+        raw=res.read(1024)
+        try:
+            payload=json.loads(raw)
+            err=str(payload.get("error","")) if isinstance(payload,dict) else ""
+            known={"Origin denied":"origin_denied","Origin required":"origin_required","Forbidden":"forbidden","Unauthorized":"unauthorized","Access denied":"access_denied","Invalid session":"invalid_session","Missing authorization":"missing_authorization"}
+            reason=known.get(err,"other_error" if err else "no_error_field")
+        except (ValueError,UnicodeError):reason="non_json"
+except (OSError,ValueError,TimeoutError):pass
+print("finance_gateway_anonymous_denial_reason_class="+reason)
+' 2>/dev/null || echo "finance_gateway_runtime_probe=unavailable"
 echo "FINANCE_EDGE_READONLY_INSPECTION_END"
