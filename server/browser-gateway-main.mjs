@@ -1,14 +1,18 @@
 import {createFinanceBrowserGateway} from './browser-gateway.mjs';
 
-// Separate loopback-only gateway process on EXISTING Lightsail, NOT deployed automatically.
-// Do not enable reverse proxy or expose finance API until user auth/security review.
+// Candidate only, NOT deployed. Docker listener is on the container interface;
+// the future host publication MUST remain bound to 127.0.0.1, never a public port.
 if(process.env.NODE_ENV!=='production')throw Error('Gateway requires production mode');
+const apiOrigin=process.env.FINANCES_GATEWAY_API_ORIGIN||'http://127.0.0.1:8091';
+const bindHost=process.env.FINANCES_GATEWAY_BIND_HOST||'127.0.0.1';
+if(!['127.0.0.1','0.0.0.0'].includes(bindHost))throw Error('Invalid gateway bind host');
+if(bindHost==='0.0.0.0'&&apiOrigin!=='http://api:8091')throw Error('Docker gateway requires isolated finance API service');
 const server=createFinanceBrowserGateway({
  publicOrigin:process.env.FINANCES_PUBLIC_ORIGIN,
- apiOrigin:'http://127.0.0.1:8091',
+ apiOrigin,
  apiToken:process.env.FINANCES_API_TOKEN,
  sessionSecret:process.env.FINANCES_SESSION_SECRET,
  passwordDigest:process.env.FINANCES_OWNER_PASSWORD_HASH
 });
-server.listen(8092,'127.0.0.1',()=>console.log('Private finance gateway ready on loopback:8092'));
+server.listen(8092,bindHost,()=>console.log('Finance gateway candidate ready'));
 for(const sig of ['SIGINT','SIGTERM'])process.on(sig,()=>server.close(()=>process.exit(0)));

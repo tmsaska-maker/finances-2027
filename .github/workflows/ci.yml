@@ -33,9 +33,16 @@ jobs:
         run: node --test deploy/compose.test.mjs
       - name: Verify manual finance deploy safety guards
         run: node --test deploy/manual-finance-deploy.test.mjs
+      - name: Validate isolated Docker synthetic finance gateway integration contract
+        run: node --test deploy/gateway-smoke.test.mjs
       - name: Check Docker Compose syntax with dummy CI secrets
         run: |
           FINANCES_DB_PASSWORD=ci-placeholder-not-a-secret FINANCES_API_TOKEN=ci-placeholder-not-a-secret docker compose -f deploy/compose.yaml config -q
+      - name: Synthetic Docker end-to-end gateway and finance API smoke (NO DEPLOY)
+        run: |
+          set -euo pipefail
+          docker build -f server/Dockerfile.gateway -t "finances2027-gateway-candidate:${GITHUB_SHA}" server
+          bash deploy/gateway-docker-smoke.sh "finances2027-gateway-candidate:${GITHUB_SHA}"
       - name: Production build
         run: npm run build
 
