@@ -84,3 +84,17 @@ test('T007 edge preflight is manual, read-only, and never dumps Caddy secrets or
   assert.doesNotMatch(edge,/\b(?:systemctl restart|systemctl reload|docker compose up|docker compose down|iptables|ufw|tee|chown|chmod|rm -rf|curl)\b/);
   execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
 });
+
+test('T007 edge classifier recognizes genuine loopback and non-loopback listeners',()=>{
+  const edge=readFileSync(new URL('./finance-edge-readonly-inspect.sh',import.meta.url),'utf8');
+  assert.match(edge,/127\[\.\]0\[\.\]0\[\.\]1/);
+  assert.match(edge,/\[::1/);
+  assert.doesNotMatch(edge,/127\\\\\.0\\\\\.0\\\\\.1/);
+  const awkBody = edge.match(/state="\$\(ss -lntH \| awk -v p="\$port" '\n([\s\S]*?)\n    '\)"/)?.[1];
+  assert.ok(awkBody,'Expected listener classifier');
+  const sample = ['LISTEN 0 128 127.0.0.1:8091 0.0.0.0:*','LISTEN 0 128 [::1]:8092 [::]:*','LISTEN 0 128 0.0.0.0:443 0.0.0.0:*'].join('\n')+'\n';
+  const awk = execFileSync('awk',['-v','p=8091',awkBody],{input:sample,encoding:'utf8'}).trim();
+  assert.equal(awk,'loopback_only');
+  assert.equal(execFileSync('awk',['-v','p=8092',awkBody],{input:sample,encoding:'utf8'}).trim(),'loopback_only');
+  assert.equal(execFileSync('awk',['-v','p=443',awkBody],{input:sample,encoding:'utf8'}).trim(),'nonloopback_listener');
+});
