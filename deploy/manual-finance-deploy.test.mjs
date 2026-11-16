@@ -142,3 +142,17 @@ test('T007 gateway forensics inspect process identity without exposing process d
  execFileSync('python3',['-c','import sys;compile(sys.stdin.read(),"<read-only-inspect>","exec")'],{input:python,encoding:'utf8'});
  execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
 });
+
+test('T007 container owner check is strictly read-only and prints only whitelisted classifications',()=>{
+  const edge=readFileSync(new URL('./finance-edge-readonly-inspect.sh',import.meta.url),'utf8');
+  const check=edge.split('# Determine Docker owner of host port 8092')[1]||'';
+  assert.match(check,/docker_host8092_project_class=/);
+  assert.match(check,/docker_host8092_service_class=/);
+  assert.match(check,/\.HostConfig\.PortBindings/);
+  assert.match(check,/\.Config\.Labels/);
+  assert.doesNotMatch(check,/\.Config\.Env|docker\s+exec|docker\s+stop|docker\s+restart|print\(cid\)|print\(image\)|print\(ports\)|print\(project\)|print\(service\)/);
+  const python=check.match(/python3 -c '\n([\s\S]*?)\n' 2>\/dev\/null/)?.[1];
+  assert.ok(python,'Expected Python script for port classification');
+  execFileSync('python3',['-c','import sys;compile(sys.stdin.read(),"<docker-owner>","exec")'],{input:python,encoding:'utf8'});
+  execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
+});
