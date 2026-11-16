@@ -110,3 +110,15 @@ test('T007 route diagnostics emit only allowlisted classifications, never domain
   assert.doesNotMatch(edge,/print\(config\)|print\(servers\)|print\(http\)|print\(dial\)|print\(line\)/);
   execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
 });
+
+test('T007 anonymous gateway probe is GET-only and never sends cookies, passwords or bodies to logs',()=>{
+  const edge=readFileSync(new URL('./finance-edge-readonly-inspect.sh',import.meta.url),'utf8');
+  const probe=edge.split('# Anonymous safety probe.')[1]||'';
+  assert.ok(probe.length>400);
+  assert.match(probe,/Request\(url,headers=\{"Accept":"application\/json"\},method="GET"\)/);
+  assert.match(probe,/timeout=3/);
+  assert.match(probe,/anonymous_gateway8092_session_class=/);
+  assert.match(probe,/gateway8092_obligations/);
+  assert.doesNotMatch(probe,/method="POST"|Authorization|Bearer|Cookie|print\(raw\)|print\(data\)/);
+  execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
+});

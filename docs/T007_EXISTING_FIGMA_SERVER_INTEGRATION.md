@@ -51,3 +51,9 @@
 - `deploy/finance-edge-readonly-inspect.sh` перевіряє, чи діє Caddy як системний сервіс або контейнер, чи є типовий Caddyfile, чи існують погоджені finance staging/public каталоги, й показує лише статус портів 80/443/8091/8092 як `loopback_only / nonloopback_listener / not_listening`.
 - Жодного виводу Caddyfile, доменів, IP, аргументів процесів, значень .env чи секретів. Жодних записів, рестартів або відкриття портів, крім уже наявного тимчасового SSH для самого workflow.
 - **Після запуску inspect-edge** визначити фактичний власник HTTPS gateway (Caddy host чи container), окремий приватний HTTPS origin, поточні routes та точний спосіб безпечного підключення **без** зміни маршруту Screening40. Далі — незалежний review конфігурації, TLS/auth/CSRF, ручне погодження деплою з rollback. Не запускати приватний gateway у відкритому доступі до review.
+
+## 16.11 — фактичний HTTPS edge (ручний inspect-edge №43821637005)
+- ✅ validate та lightsail success, finance-only preflight PASS. Системний Caddy active, **1 server / 2 routes**, `/opt/finances-2027/site` існує. 80/443 слухають мережеві інтерфейси, **8091 і 8092 лише loopback**.
+- 8091 та 8092 — процеси класу Node/Docker; у Caddy **є** proxy route до 8092 та finance static root; proxy до 8091 немає.
+- Це **НЕ** доводить, що 8092 — саме наш gateway з поточного GitHub і що анонімний запит буде відхилено. Нічого не перезапускати й не змінювати Caddy до перевірки.
+- Додано лише читальний anonymous GET-probe в operation `inspect-edge`: статуси /health на 8091, /finance-api/session, /obligations, /categories на 8092; для session лише класифікація `authenticated:false` без розкриття тіла. Жодних секретів, cookies, mutating POST чи публічних запитів. Результат потрібен перед security review і будь-яким приватним деплоєм.
