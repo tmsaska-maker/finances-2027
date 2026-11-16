@@ -191,3 +191,23 @@ test('T007 gateway candidate is package-only and never reaches Lightsail or Scre
  assert.doesNotMatch(dockerfile,/FINANCES_API_TOKEN|FINANCES_SESSION_SECRET|FINANCES_OWNER_PASSWORD_HASH|COPY\s+\.\s+\.|COPY\s+\.env/);
  assert.doesNotMatch(dockerfile,/EXPOSE 8091/);
 });
+
+test('T007 live finance topology and rollback prerequisites inspection is strictly read-only',()=>{
+ const edge=readFileSync(new URL('./finance-edge-readonly-inspect.sh',import.meta.url),'utf8');
+ const section=edge.split('# Finance-only deployment readiness:')[1]?.split('FINANCE_EDGE_READONLY_INSPECTION_END')[0]||'';
+ assert.ok(section.length>1600);
+ for(const name of ['finance_runtime_gateway_count_class','finance_runtime_api_count_class','finance_gateway_rollback_class','finance_gateway_restart_policy_class','finance_gateway_api_network_class'])
+   assert.ok(section.includes(name+'='),'Missing classification: '+name);
+ assert.match(section,/com\.docker\.compose\.project/);
+ assert.match(section,/com\.docker\.compose\.service/);
+ assert.match(section,/shared_network_api_alias/);
+ assert.match(section,/compose_source_not_verified/);
+ assert.match(section,/image_not_cached/);
+ assert.match(section,/\/opt\/finances-2027\//);
+ assert.doesNotMatch(section,/docker\s+(?:exec|run|stop|restart|rm|rmi|pull|load|save|compose up|network create)|print\((?:cid|ids|gateway|api|obj|labels|paths|image|raw|gw_networks|api_networks|finance)\)/);
+ assert.doesNotMatch(section,/\.Env|os\.environ|FINANCES_API_TOKEN|FINANCES_SESSION_SECRET|FINANCES_OWNER_PASSWORD_HASH|docker\s+logs/);
+ const body=section.match(/python3 -c '\n([\s\S]*?)\n' 2>\/dev\/null/)?.[1];
+ assert.ok(body,'Expected read-only Python classifier');
+ execFileSync('python3',['-c','import sys;compile(sys.stdin.read(),"<finance-topology>","exec")'],{input:body,encoding:'utf8'});
+ execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
+});

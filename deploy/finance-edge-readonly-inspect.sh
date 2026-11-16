@@ -299,4 +299,61 @@ try:
 except (OSError,ValueError,TimeoutError):pass
 print("finance_gateway_anonymous_denial_reason_class="+reason)
 ' 2>/dev/null || echo "finance_gateway_runtime_probe=unavailable"
+# Finance-only deployment readiness: identify whether the existing gateway can be
+# reproduced and whether Docker has an API service reachable by its alias.
+# Inspect metadata in memory; output a fixed set of coarse classes ONLY.
+python3 -c '
+import json,os,subprocess
+def docker(*args):
+    try:
+        r=subprocess.run(["docker",*args],capture_output=True,text=True,timeout=8,check=False)
+        return r.stdout if r.returncode==0 else ""
+    except (OSError,subprocess.TimeoutExpired):return ""
+try: ids=docker("ps","-q").splitlines()
+except Exception: ids=[]
+finance={}
+for cid in ids:
+    try: obj=json.loads(docker("inspect","--type","container",cid))[0]
+    except (ValueError,TypeError,IndexError):continue
+    labels=(obj.get("Config",{}) or {}).get("Labels",{}) or {}
+    if labels.get("com.docker.compose.project")!="finances2027":continue
+    service=labels.get("com.docker.compose.service")
+    if service not in ("api","gateway"):continue
+    finance.setdefault(service,[]).append(obj)
+def klass(n):return "one" if n==1 else ("none" if n==0 else "multiple")
+print("finance_runtime_gateway_count_class="+klass(len(finance.get("gateway",[]))))
+print("finance_runtime_api_count_class="+klass(len(finance.get("api",[]))))
+if len(finance.get("gateway",[]))!=1:
+    print("finance_gateway_rollback_class=not_verified")
+    print("finance_gateway_api_network_class=not_verified")
+else:
+    gateway=finance["gateway"][0]
+    labels=(gateway.get("Config",{}) or {}).get("Labels",{}) or {}
+    raw=labels.get("com.docker.compose.project.config_files","")
+    # Paths are not printed; only confirm an existing private, finance-owned file.
+    paths=[p.strip() for p in str(raw).split(",") if p.strip()]
+    safe=bool(paths) and all(p.startswith("/opt/finances-2027/") and os.path.isfile(p) for p in paths)
+    image=gateway.get("Image","")
+    cached=bool(image) and bool(docker("image","inspect","--format","{{.Id}}",image).strip())
+    policy=(gateway.get("HostConfig",{}) or {}).get("RestartPolicy",{}) or {}
+    restart=policy.get("Name","")
+    # A rollback requires a preserved old config, cached old image and a separate
+    # tested rollback playbook. Classify prerequisites, NOT production readiness.
+    if safe and cached:ready="prerequisites_present"
+    elif not safe:ready="compose_source_not_verified"
+    else:ready="image_not_cached"
+    print("finance_gateway_rollback_class="+ready)
+    print("finance_gateway_restart_policy_class="+("automatic" if restart in ("always","unless-stopped","on-failure") else "not_automatic"))
+    gw_networks=(gateway.get("NetworkSettings",{}) or {}).get("Networks",{}) or {}
+    if len(finance.get("api",[]))!=1:
+        connectivity="api_not_unique"
+    else:
+        api=finance["api"][0]
+        api_networks=(api.get("NetworkSettings",{}) or {}).get("Networks",{}) or {}
+        common=set(gw_networks).intersection(api_networks)
+        if not common:connectivity="no_shared_network"
+        elif any("api" in (api_networks.get(n,{}).get("Aliases",[]) or []) for n in common):connectivity="shared_network_api_alias"
+        else:connectivity="shared_network_alias_unverified"
+    print("finance_gateway_api_network_class="+connectivity)
+' 2>/dev/null || echo "finance_deploy_readiness_probe=unavailable"
 echo "FINANCE_EDGE_READONLY_INSPECTION_END"
