@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import ServerExpenses from "./ServerExpenses"
+import PrivateFinanceGate from "./PrivateFinanceGate"
 import { loadReadOnlyFinanceExpenses } from "./domain/live-finance-expenses"
 import { readDemoSession, saveDemoSession, toKopiykas, toMinor, type DemoExpense, type DemoPending } from "./domain/expense-session"
 
@@ -175,11 +176,11 @@ const formatMoney = (value: number) =>
   new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(value) +
   " ₴"
 
-function App() {
+function FinanceDashboardApp({ privateLogout }: { privateLogout?: () => Promise<void> }) {
   // Private build only. Public GitHub Pages always stays an isolated synthetic demo.
   const privateFinanceMode = import.meta.env.VITE_FINANCES_PRIVATE_UI === "true"
   const [space, setSpace] = useState<Space>("business")
-  const [screen, setScreen] = useState<Screen>("dashboard")
+  const [screen, setScreen] = useState<Screen>(privateFinanceMode ? "expenses" : "dashboard")
   const [direction, setDirection] = useState<Project>("Усі напрями")
   const [panel, setPanel] = useState<"day" | "transfer" | "pos" | null>(null)
   const [toast, setToast] = useState("")
@@ -251,12 +252,12 @@ function App() {
             >
               <Icon name={item.icon} />
               <span>{item.label}</span>
-              {item.id === "expenses" && space === "business" && <em>3</em>}
+              {item.id === "expenses" && space === "business" && !privateFinanceMode && <em>3</em>}
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          {space === "business" && (
+          {space === "business" && !privateFinanceMode && (
             <button
               className="owner-transfer"
               onClick={() => setPanel("transfer")}
@@ -270,6 +271,7 @@ function App() {
           >
             <Icon name="settings" /> Налаштування
           </button>
+          {privateFinanceMode && privateLogout && <button className="finance-logout" type="button" onClick={() => void privateLogout()}><Icon name="shield" size={17}/> Вийти з кабінету</button>}
           <div className="profile">
             <div className="avatar">С</div>
             <div>
@@ -306,15 +308,15 @@ function App() {
             <strong>{title}</strong>
           </div>
           <div className="top-actions">
-            <button className="search">
+            {!privateFinanceMode && <button className="search">
               <Icon name="search" />
               <span>Пошук</span>
               <kbd>⌘ K</kbd>
-            </button>
-            <button className="icon-button has-dot" aria-label="Сповіщення">
+            </button>}
+            {!privateFinanceMode && <button className="icon-button has-dot" aria-label="Сповіщення">
               <Icon name="bell" />
-            </button>
-            {space === "business" && (
+            </button>}
+            {space === "business" && !privateFinanceMode && (
               <button
                 className="primary compact"
                 onClick={() => navigate("planning")}
@@ -332,7 +334,9 @@ function App() {
               : "content personal-content"
           }
         >
-          {space === "business" && (
+          {privateFinanceMode && !(space === "business" && screen === "expenses") ?
+            <section className="table-card finance-private-pending" role="status"><Icon name="shield" size={22}/><h2>Розділ готується до підключення</h2><p>Цей екран уже існує в погодженому дизайні Figma, але його дані ще не підключено до захищеної PostgreSQL. Демонстраційні суми тут навмисно не показуємо.</p><button className="secondary" type="button" onClick={() => {setSpace("business");setScreen("expenses")}}>Перейти до реєстру зобов’язань</button></section>
+          : space === "business" && (
             <>
               {screen === "dashboard" && (
                 <BusinessDashboard
@@ -389,7 +393,7 @@ function App() {
               ].includes(screen) && <GenericScreen screen={screen} />}
             </>
           )}
-          {space === "personal" && (
+          {!privateFinanceMode && space === "personal" && (
             <>
               {screen === "dashboard" && (
                 <PersonalDashboard navigate={navigate} />
@@ -403,8 +407,8 @@ function App() {
         </div>
       </main>
 
-      {panel === "day" && <DayPanel close={() => setPanel(null)} />}
-      {panel === "transfer" && (
+      {!privateFinanceMode && panel === "day" && <DayPanel close={() => setPanel(null)} />}
+      {!privateFinanceMode && panel === "transfer" && (
         <TransferPanel
           close={() => setPanel(null)}
           done={() => {
@@ -413,7 +417,7 @@ function App() {
           }}
         />
       )}
-      {panel === "pos" && (
+      {!privateFinanceMode && panel === "pos" && (
         <PosPanel
           close={() => setPanel(null)}
           done={() => {
@@ -2942,6 +2946,13 @@ function Modal({
       </div>
     </div>
   )
+}
+
+function App() {
+  const privateFinanceMode = import.meta.env.VITE_FINANCES_PRIVATE_UI === "true"
+  return privateFinanceMode
+    ? <PrivateFinanceGate>{logout => <FinanceDashboardApp privateLogout={logout}/>}</PrivateFinanceGate>
+    : <FinanceDashboardApp />
 }
 
 export default App
