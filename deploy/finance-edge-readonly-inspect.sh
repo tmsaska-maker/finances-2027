@@ -103,4 +103,36 @@ for key in sorted(markers):print("caddy_"+key+"="+("present" if markers[key] els
 else
   echo "caddy_routes=unavailable"
 fi
+# Anonymous safety probe. GET only; do not send credentials, cookies, origin, or print response bodies.
+# The existing port 8092 may serve an unrelated process. Classify, do not assume.
+python3 -c '
+import json,urllib.request,urllib.error
+tests=(
+ ("api8091_health","http://127.0.0.1:8091/health",False),
+ ("gateway8092_session","http://127.0.0.1:8092/finance-api/session",True),
+ ("gateway8092_obligations","http://127.0.0.1:8092/finance-api/obligations",False),
+ ("gateway8092_categories","http://127.0.0.1:8092/finance-api/categories?project=personal&type=expense",False)
+)
+for name,url,is_session in tests:
+    code="unavailable"
+    session="unverified"
+    try:
+        request=urllib.request.Request(url,headers={"Accept":"application/json"},method="GET")
+        with urllib.request.urlopen(request,timeout=3) as response:
+            code=str(response.status)
+            if is_session and response.status==200:
+                # Never echo the body, only whether an anonymous session is correctly rejected.
+                raw=response.read(4096)
+                try:
+                    data=json.loads(raw)
+                    session="anonymous" if isinstance(data,dict) and data.get("authenticated") is False else "unexpected"
+                except (ValueError,UnicodeError):session="invalid_response"
+    except urllib.error.HTTPError as error:
+        code=str(error.code)
+        error.close()
+    except (OSError,ValueError,TimeoutError):
+        pass
+    print("anonymous_"+name+"_status="+code)
+    if is_session: print("anonymous_gateway8092_session_class="+session)
+' 2>/dev/null || echo "anonymous_probe=unavailable"
 echo "FINANCE_EDGE_READONLY_INSPECTION_END"
