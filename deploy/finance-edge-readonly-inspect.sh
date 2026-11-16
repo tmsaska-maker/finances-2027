@@ -48,4 +48,59 @@ if command -v ss >/dev/null 2>&1; then
 else
   echo "port_inventory=unavailable"
 fi
+# Determine the *class* of listener process, never expose PIDs, command lines, hostnames.
+if command -v ss >/dev/null 2>&1; then
+  ss -lntpH 2>/dev/null | python3 -c '
+import re,sys
+rows=sys.stdin.read().splitlines()
+for port in (8091,8092):
+    matches=[line for line in rows if len(line.split())>=4 and re.search(r":"+str(port)+r"$",line.split()[3])]
+    names=[]
+    for line in matches:
+        match=re.search(r"users:\(\(\"([^\"]+)\"",line)
+        if match: names.append(match.group(1))
+    if not matches: classification="not_listening"
+    elif not names: classification="unidentified"
+    elif all(n in ("node","docker-proxy","rootlesskit") for n in names):
+        classification="node_or_docker"
+    elif all(n=="caddy" for n in names): classification="caddy"
+    else: classification="other_process"
+    print("tcp_port_%s_process_class=%s"%(port,classification))
+'
+fi
+# Caddy's adapter produces JSON; only print a fixed vocabulary of boolean flags.
+# Redirect Caddy diagnostics to /dev/null so a parse error cannot expose config.
+if command -v caddy >/dev/null 2>&1 && test -f /etc/caddy/Caddyfile; then
+  if caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null |
+    python3 -c '
+import json,sys
+try: config=json.load(sys.stdin)
+except (ValueError,UnicodeError):
+    print("caddy_routes=unavailable")
+    sys.exit(0)
+http=config.get("apps",{}).get("http",{})
+servers=http.get("servers",{})
+routes=sum(len(server.get("routes",[])) for server in servers.values())
+markers={"finance_api_8091":False,"finance_gateway_8092":False,"finance_static_root":False}
+def visit(v):
+    if isinstance(v,dict):
+        if v.get("handler")=="reverse_proxy":
+            for x in v.get("upstreams",[]):
+                dial=x.get("dial","")
+                if dial.endswith(":8091"): markers["finance_api_8091"]=True
+                if dial.endswith(":8092"): markers["finance_gateway_8092"]=True
+        if v.get("handler")=="vars" and str(v.get("root","")).startswith("/opt/finances-2027/"):
+            markers["finance_static_root"]=True
+        for child in v.values():visit(child)
+    elif isinstance(v,list):
+        for child in v: visit(child)
+visit(http)
+print("caddy_server_blocks=%d"%len(servers))
+print("caddy_route_count=%d"%routes)
+for key in sorted(markers):print("caddy_"+key+"="+("present" if markers[key] else "absent"))
+'
+  then :; else echo "caddy_routes=unavailable"; fi
+else
+  echo "caddy_routes=unavailable"
+fi
 echo "FINANCE_EDGE_READONLY_INSPECTION_END"
