@@ -122,3 +122,23 @@ test('T007 anonymous gateway probe is GET-only and never sends cookies, password
   assert.doesNotMatch(probe,/method="POST"|Authorization|Bearer|Cookie|print\(raw\)|print\(data\)/);
   execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
 });
+
+test('T007 gateway forensics inspect process identity without exposing process details or response bodies',()=>{
+ const edge=readFileSync(new URL('./finance-edge-readonly-inspect.sh',import.meta.url),'utf8');
+ const section=edge.split('# Diagnostics of *existing* 8092 service:')[1];
+ assert.ok(section && section.length>1600);
+ assert.match(section,/tcp_port_8092_identity=/);
+ assert.match(section,/tcp_port_8092_workdir=/);
+ assert.match(section,/browser-gateway-main\.mjs/);
+ assert.match(section,/expected_host/);
+ assert.match(section,/expected_https_proxy/);
+ assert.match(section,/method="GET"/);
+ assert.match(section,/gateway8092_session_.*_response_class=/);
+ assert.doesNotMatch(section,/print\((?:args|joined|path|pids|raw|parsed|headers|output)\)/);
+ assert.doesNotMatch(section,/method="POST"|FINANCES_API_TOKEN|FINANCES_SESSION_SECRET|\bAuthorization\b|\bBearer\b/);
+ const python=section.match(/python3 -c '\n([\s\S]*?)\n' 2>\/dev\/null/)?.[1];
+ assert.ok(python,'Expected Python diagnostic script');
+ // Syntax validation does not execute network or process queries.
+ execFileSync('python3',['-c','import sys;compile(sys.stdin.read(),"<read-only-inspect>","exec")'],{input:python,encoding:'utf8'});
+ execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
+});
