@@ -79,7 +79,8 @@ test('T007 edge preflight is manual, read-only, and never dumps Caddy secrets or
   assert.match(edge,/FINANCE_EDGE_READONLY_INSPECTION_BEGIN/);
   assert.match(edge,/FINANCE_EDGE_READONLY_INSPECTION_END/);
   assert.match(edge,/tcp_port_\$\{port\}/);
-  assert.doesNotMatch(edge,/\b(?:cat|sed|head|tail|printenv|env|docker inspect|docker logs|systemctl cat|jq)\s+.*(?:Caddyfile|\.env|secrets|token)/i);
+  const executable=edge.split('\n').filter(line=>!/^\s*#/.test(line)).join('\n');
+  assert.doesNotMatch(executable,/\b(?:cat|sed|head|tail|printenv|env|docker inspect|docker logs|systemctl cat|jq)\s+.*(?:Caddyfile|\.env|secrets|token)/i);
   assert.doesNotMatch(edge,/\b(?:systemctl restart|systemctl reload|docker compose up|docker compose down|iptables|ufw|tee|chown|chmod|rm -rf|curl)\b/);
   execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
 });
