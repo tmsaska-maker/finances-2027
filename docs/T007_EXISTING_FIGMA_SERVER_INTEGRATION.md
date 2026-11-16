@@ -63,3 +63,10 @@
 Підтверджено: finance API localhost:8091 анонімно повертає HTTP 401, а localhost:8092 повертає HTTP 403 для `GET /finance-api/session`, `/obligations`, `/categories`. Caddy має маршрут до 8092, але не до 8091. В поточному `server/browser-gateway.mjs` анонімний GET session без Origin має повертати HTTP 200 з `authenticated:false`, отже **фактичний процес / конфігурація 8092 відрізняються від поточного коду** або спрацьовує інший захисний шар. Це розбіжність, не підтвердження успішного user login. Публічний приватний UI не деплоїти.
 
 Діагностика `inspect-edge` доповнена тільки **читанням**: клас команди процесу 8092 (поточний запропонований gateway чи інший Node/gateway), приналежність його working directory до відомого finance/screening/other каталогу; три анонімні `GET /finance-api/session` з локальним Host, очікуваним Host та HTTPS-proxy-подібними заголовками. Виводяться лише HTTP код та клас відповіді, ніколи **не** PID, аргументи команд, паролі, вміст відповіді чи Caddyfile. Зміни сервісів/Firewall/Caddy/Screеning40 заборонені. Далі після фактичних результатів — окремо затвердити інженерне рішення, перш ніж змінювати доступ.
+
+## 16.11.2026 — manual №43902189852: локальний порт 8092 опублікований Docker
+
+- Успіх `validate` і `lightsail`; `OPERATION=inspect-edge` підтверджено у GitHub Actions. 8091 і 8092 лише `loopback_only`.
+- `tcp_port_8092_identity=docker_proxy`, `tcp_port_8092_workdir=other_directory`. Власний окремий Node gateway із GitHub (PR #24) не підтверджено.
+- Для анонімного `GET /finance-api/session`: локальний, очікуваний Host та імітовані HTTPS/Origin-заголовки **всі повернули HTTP 403** (`json_error`), а `/finance-api/obligations` і `/categories` теж 403. Тому відмінність не усувається додаванням очікуваних заголовків; точна причина може бути всередині Docker-сервісу.
+- Далі **тільки** read-only перевірка Docker HostConfig.PortBindings для 8092 і обмежена класифікація compose project/service. Не виводити ID контейнерів, image names, labels, environment, командні рядки або приватні конфіги. **Не** перезапускати контейнер, не змінювати Caddy/Screening40.
