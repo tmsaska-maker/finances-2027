@@ -12,6 +12,7 @@ on:
           - preflight
           - audit
           - inspect-edge
+          - snapshot-gateway
           - deploy
       approved_sha:
         description: "For deploy: exact 40-character main SHA; empty for preflight"
@@ -177,6 +178,9 @@ jobs:
           if [[ "$OPERATION" == inspect-edge ]]; then
             scp "${SSH_OPTS[@]}" deploy/finance-edge-readonly-inspect.sh "$SSH_USER@$SSH_IP:$STAGE/finance-edge-readonly-inspect.sh"
           fi
+          if [[ "$OPERATION" == snapshot-gateway ]]; then
+            scp "${SSH_OPTS[@]}" deploy/finance-gateway-rollback-snapshot.py "$SSH_USER@$SSH_IP:$STAGE/finance-gateway-rollback-snapshot.py"
+          fi
           if [[ "$OPERATION" == deploy ]]; then
             scp "${SSH_OPTS[@]}" server/sql/00{3,4,5,6}_*.sql "$SSH_USER@$SSH_IP:$STAGE/sql/"
             scp "${SSH_OPTS[@]}" "finances-api-${GITHUB_SHA}.tar.gz" "$SSH_USER@$SSH_IP:$STAGE/"
@@ -199,6 +203,15 @@ jobs:
         run: |
           SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
           ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/finance-edge-readonly-inspect.sh'"
+
+      - name: Snapshot original finance gateway image and verify Docker create without starting it
+        if: inputs.operation == 'snapshot-gateway'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo python3 '/tmp/finances2027-${GITHUB_SHA}/finance-gateway-rollback-snapshot.py' '${GITHUB_SHA}'"
+          echo "Finance gateway private rollback snapshot and no-start image create check executed. Production runtime rollback NOT verified." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Finance backup and isolated restore test
         if: inputs.operation == 'deploy'
