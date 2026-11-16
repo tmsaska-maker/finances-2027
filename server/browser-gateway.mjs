@@ -41,7 +41,7 @@ export function createFinanceBrowserGateway({publicOrigin,apiOrigin='http://127.
   const origin=new URL(publicOrigin||'');
   if(origin.protocol!=='https:' || origin.username || origin.password || origin.pathname!=='/' || origin.search || origin.hash) throw Error('A clean HTTPS finance public origin is required');
   const api=new URL(apiOrigin);
-  if(api.protocol!=='http:'||!['127.0.0.1','localhost'].includes(api.hostname)||api.pathname!=='/'||api.username||api.password) throw Error('Only loopback finance API is permitted');
+  if(api.protocol!=='http:'||!['127.0.0.1','localhost','api'].includes(api.hostname)||(api.hostname==='api'&&api.port!=='8091')||api.pathname!=='/'||api.search||api.hash||api.username||api.password) throw Error('Only allowlisted private finance API origin is permitted');
   if(typeof apiToken!=='string'||apiToken.length<32||typeof sessionSecret!=='string'||sessionSecret.length<48) throw Error('Missing private finance gateway secrets');
   if(typeof passwordDigest!=='string'|| !/^[a-f0-9]{48}:[a-f0-9]{64}$/.test(passwordDigest)) throw Error('Invalid password hash');
   const failures=new Map();
