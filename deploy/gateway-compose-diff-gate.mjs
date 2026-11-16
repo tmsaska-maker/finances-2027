@@ -7,6 +7,7 @@ import {readFileSync} from 'node:fs';
 import {isDeepStrictEqual} from 'node:util';
 const expectedPort=p=>String(p.host_ip)==='127.0.0.1'&&String(p.published)==='8092'&&Number(p.target)===8092&&(!p.protocol||p.protocol==='tcp');
 const keyset=o=>Object.keys(o||{}).sort();
+const networkNames=o=>Array.isArray(o)?o.map(String).sort():keyset(o);
 export function validateFinanceGatewayCompose(baseline,candidate,imageTag){
  const errors=[];
  const fail=(condition,code)=>{if(!condition)errors.push(code);};
@@ -21,8 +22,8 @@ export function validateFinanceGatewayCompose(baseline,candidate,imageTag){
  fail(next.image===imageTag,'candidate_image_mismatch');
  const published=next.ports||[];
  fail(Array.isArray(published)&&published.length===1&&expectedPort(published[0]),'gateway_port_not_loopback');
- fail(isDeepStrictEqual(original.networks||[],next.networks||[]),'gateway_networks_changed');
- fail(Array.isArray(next.networks)&&next.networks.length>=1,'gateway_network_absent');
+ fail(isDeepStrictEqual(original.networks||{},next.networks||{}),'gateway_networks_changed');
+ fail(networkNames(next.networks).length>=1,'gateway_network_absent');
  fail(next.read_only===true,'gateway_root_fs_not_readonly');
  fail(Array.isArray(next.cap_drop)&&next.cap_drop.includes('ALL'),'gateway_capabilities_not_dropped');
  fail(Array.isArray(next.security_opt)&&next.security_opt.includes('no-new-privileges:true'),'gateway_privilege_escalation_not_blocked');
