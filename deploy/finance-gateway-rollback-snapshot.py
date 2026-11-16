@@ -80,12 +80,20 @@ def main():
         if result.returncode!=0 or archive.stat().st_size==0:fail("image_save_failed")
         with tarfile.open(archive,"r:") as tar:
             # No extraction or execution. Verify manifest and every member CRC/tar stream.
-            names=tar.getnames()
-            if "manifest.json" not in names:fail("invalid_docker_archive")
-            member=tar.extractfile("manifest.json")
-            if member is None:fail("invalid_docker_manifest")
-            manifest=json.loads(member.read(1024*1024))
-            if not isinstance(manifest,list) or not manifest:fail("invalid_docker_manifest")
+            names=set()
+            manifest=None
+            for member in tar:
+                names.add(member.name)
+                if member.isfile():
+                    reader=tar.extractfile(member)
+                    if reader is None:fail("invalid_docker_archive")
+                    if member.name=="manifest.json":
+                        if member.size>1024*1024:fail("invalid_docker_manifest")
+                        manifest=json.loads(reader.read())
+                    else:
+                        for _ in iter(lambda:reader.read(1024*1024),b""):pass
+            if "manifest.json" not in names or not isinstance(manifest,list) or not manifest:
+                fail("invalid_docker_manifest")
         checksum=hashlib.sha256()
         with archive.open("rb") as input_file:
             for block in iter(lambda:input_file.read(1024*1024),b""):checksum.update(block)
