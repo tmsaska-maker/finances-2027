@@ -57,3 +57,9 @@
 - 8091 та 8092 — процеси класу Node/Docker; у Caddy **є** proxy route до 8092 та finance static root; proxy до 8091 немає.
 - Це **НЕ** доводить, що 8092 — саме наш gateway з поточного GitHub і що анонімний запит буде відхилено. Нічого не перезапускати й не змінювати Caddy до перевірки.
 - Додано лише читальний anonymous GET-probe в operation `inspect-edge`: статуси /health на 8091, /finance-api/session, /obligations, /categories на 8092; для session лише класифікація `authenticated:false` без розкриття тіла. Жодних секретів, cookies, mutating POST чи публічних запитів. Результат потрібен перед security review і будь-яким приватним деплоєм.
+
+## 16.11.2026 — визначення причини HTTP 403 (після manual №43898524607)
+
+Підтверджено: finance API localhost:8091 анонімно повертає HTTP 401, а localhost:8092 повертає HTTP 403 для `GET /finance-api/session`, `/obligations`, `/categories`. Caddy має маршрут до 8092, але не до 8091. В поточному `server/browser-gateway.mjs` анонімний GET session без Origin має повертати HTTP 200 з `authenticated:false`, отже **фактичний процес / конфігурація 8092 відрізняються від поточного коду** або спрацьовує інший захисний шар. Це розбіжність, не підтвердження успішного user login. Публічний приватний UI не деплоїти.
+
+Діагностика `inspect-edge` доповнена тільки **читанням**: клас команди процесу 8092 (поточний запропонований gateway чи інший Node/gateway), приналежність його working directory до відомого finance/screening/other каталогу; три анонімні `GET /finance-api/session` з локальним Host, очікуваним Host та HTTPS-proxy-подібними заголовками. Виводяться лише HTTP код та клас відповіді, ніколи **не** PID, аргументи команд, паролі, вміст відповіді чи Caddyfile. Зміни сервісів/Firewall/Caddy/Screеning40 заборонені. Далі після фактичних результатів — окремо затвердити інженерне рішення, перш ніж змінювати доступ.
