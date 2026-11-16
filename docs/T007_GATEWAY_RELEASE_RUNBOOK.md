@@ -36,3 +36,16 @@
 **Поточні блокери:** приватний origin не погоджено і не перевірено; security review/proxy rate limiting не завершено; exact old image/config rollback не збережений і не відрепетируваний; кандидат не запускався на реальній фінансовій мережі; authenticated private browser smoke не виконано; схвалення production перемикання не надане.
 
 **ВАЖЛИВО:** workflow `manual-finance-deploy.yml` з операцією `deploy` розгортає **API та SQL міграції**, а не browser gateway. Не використовувати його для цього релізу.
+
+## Репетиція відкату в GitHub CI (синтетична)
+
+`deploy/gateway-rollback-rehearsal.sh` відтворює на ізольованій GitHub-hosted Docker мережі цикл:
+1. Створити суто тестовий **старий** Docker image із поведінкою 403 і закріпити його *immutable* `sha256:...` image ID.
+2. Підняти синтетичний API, старий gateway і підтвердити 403 без входу.
+3. Замінити **лише** тестовий gateway новим кандидатом; виконати повний логін/сесію/читання з синтетичного API/вихід.
+4. Уявно вважати cutover невдалим; видалити **лише** тестовий шлюз, відновити старий *exact* image ID, перевірити стару 403 поведінку, незмінність API container ID та відсутність host published ports.
+
+**Важливе обмеження:** це перевіряє послідовність дій і можливість відновлення Docker image на ізольованому тесті. Старий образ тут — **спеціально написана синтетична заглушка**, а не справжній production образ на Lightsail. Усі Docker операції відбуваються виключно на GitHub runner, без жодної production конфігурації, Caddy чи даних.
+
+Тому навіть за `SYNTHETIC_GATEWAY_ROLLBACK_REHEARSAL_PASS` **не можна** відмічати production релізну умову `rollback_rehearsal_passed=true`. Для цього окремо потрібні приватний root-only snapshot реального старого image/Compose і тест відновлення на ізольованому серверному сценарії без зупинки live 8092.
+
