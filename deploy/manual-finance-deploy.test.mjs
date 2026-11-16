@@ -98,3 +98,15 @@ test('T007 edge classifier recognizes genuine loopback and non-loopback listener
   assert.equal(execFileSync('awk',['-v','p=8092',awkBody],{input:sample,encoding:'utf8'}).trim(),'loopback_only');
   assert.equal(execFileSync('awk',['-v','p=443',awkBody],{input:sample,encoding:'utf8'}).trim(),'nonloopback_listener');
 });
+
+test('T007 route diagnostics emit only allowlisted classifications, never domains or raw Caddyfile',()=>{
+  const edge=readFileSync(new URL('./finance-edge-readonly-inspect.sh',import.meta.url),'utf8');
+  assert.match(edge,/tcp_port_%s_process_class=%s/);
+  assert.match(edge,/classification="other_process"/);
+  assert.match(edge,/caddy_server_blocks=%d/);
+  assert.match(edge,/caddy_route_count=%d/);
+  assert.match(edge,/caddy_finance_gateway_8092/);
+  assert.match(edge,/caddy adapt --config \/etc\/caddy\/Caddyfile --adapter caddyfile 2>\/dev\/null/);
+  assert.doesNotMatch(edge,/print\(config\)|print\(servers\)|print\(http\)|print\(dial\)|print\(line\)/);
+  execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
+});
