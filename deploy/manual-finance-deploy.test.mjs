@@ -70,3 +70,17 @@ test('live finance audit is manual, counts-only, and refuses writes',()=>{
   assert.doesNotMatch(audit,/\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER|DROP)\s+(?:INTO|TABLE|FROM|finance_|accounts|transactions|obligations|payments)/i);
   execFileSync('bash',['-n',new URL('./finance-live-readonly-audit.sh',import.meta.url).pathname]);
 });
+
+test('T007 edge preflight is manual, read-only, and never dumps Caddy secrets or mutates shared server',()=>{
+  const edge=readFileSync(new URL('./finance-edge-readonly-inspect.sh',import.meta.url),'utf8');
+  assert.match(wf,/          - inspect-edge/);
+  assert.match(wf,/if: inputs.operation == 'inspect-edge'/);
+  assert.match(wf,/finance-edge-readonly-inspect\.sh/);
+  assert.match(edge,/FINANCE_EDGE_READONLY_INSPECTION_BEGIN/);
+  assert.match(edge,/FINANCE_EDGE_READONLY_INSPECTION_END/);
+  assert.match(edge,/tcp_port_\$\{port\}/);
+  const executable=edge.split('\n').filter(line=>!/^\s*#/.test(line)).join('\n');
+  assert.doesNotMatch(executable,/\b(?:cat|sed|head|tail|printenv|env|docker inspect|docker logs|systemctl cat|jq)\s+.*(?:Caddyfile|\.env|secrets|token)/i);
+  assert.doesNotMatch(edge,/\b(?:systemctl restart|systemctl reload|docker compose up|docker compose down|iptables|ufw|tee|chown|chmod|rm -rf|curl)\b/);
+  execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
+});
