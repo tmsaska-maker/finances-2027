@@ -15,7 +15,12 @@ async function listen(server) {
 async function close(server) { server.closeAllConnections(); server.close(); }
 test('finance read gateway fails closed on bad deployment configuration',()=>{
  assert.throws(()=>createFinanceBrowserGateway({publicOrigin:'http://finance.example.test',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/HTTPS/);
- assert.throws(()=>createFinanceBrowserGateway({publicOrigin,apiOrigin:'http://example.org',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/loopback/);
+ assert.throws(()=>createFinanceBrowserGateway({publicOrigin,apiOrigin:'http://example.org',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/allowlisted private finance API/);
+ assert.throws(()=>createFinanceBrowserGateway({publicOrigin,apiOrigin:'http://api:8092',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/allowlisted private finance API/);
+ assert.throws(()=>createFinanceBrowserGateway({publicOrigin,apiOrigin:'http://api:8091/obligations',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/allowlisted private finance API/);
+ assert.throws(()=>createFinanceBrowserGateway({publicOrigin,apiOrigin:'http://api:8091/?token=test',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/allowlisted private finance API/);
+ assert.throws(()=>createFinanceBrowserGateway({publicOrigin,apiOrigin:'http://attacker-api:8091',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}),/allowlisted private finance API/);
+ assert.doesNotThrow(()=>createFinanceBrowserGateway({publicOrigin,apiOrigin:'http://api:8091',apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)}));
  assert.throws(()=>createFinanceBrowserGateway({publicOrigin,apiToken:API_TOKEN,sessionSecret,passwordDigest:'invalid'}),/password hash/);
 });
 test('browser session is cookie-only and finance bearer stays on server',async()=>{
