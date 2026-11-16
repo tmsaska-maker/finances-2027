@@ -45,6 +45,11 @@ jobs:
           set -euo pipefail
           docker build -f server/Dockerfile.gateway -t "finances2027-gateway-candidate:${GITHUB_SHA}" server
           bash deploy/gateway-docker-smoke.sh "finances2027-gateway-candidate:${GITHUB_SHA}"
+      - name: Rehearse old-new-old gateway rollback in isolated synthetic Docker network
+        run: |
+          set -euo pipefail
+          node --test deploy/gateway-rollback-rehearsal.test.mjs
+          bash deploy/gateway-rollback-rehearsal.sh "finances2027-gateway-candidate:${GITHUB_SHA}"
       - name: Production build
         run: npm run build
 

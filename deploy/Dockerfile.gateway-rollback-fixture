@@ -1,0 +1,7 @@
+# Synthetic pre-release gateway for CI rollback simulation ONLY.
+FROM node:22-alpine
+WORKDIR /app
+COPY deploy/gateway-rollback-legacy-fixture.mjs ./legacy.mjs
+USER node
+EXPOSE 8092
+CMD ["node","legacy.mjs"]
