@@ -27,6 +27,11 @@ jobs:
           set -euo pipefail
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --entrypoint node "finances2027-gateway-candidate:${GITHUB_SHA}" --check browser-gateway-main.mjs
+      - name: Synthetic Docker network gateway to private API end-to-end smoke
+        run: |
+          set -euo pipefail
+          bash -n deploy/gateway-docker-smoke.sh
+          bash deploy/gateway-docker-smoke.sh "finances2027-gateway-candidate:${GITHUB_SHA}"
       - name: Archive candidate image for later security review — NO server upload
         run: |
           set -euo pipefail
