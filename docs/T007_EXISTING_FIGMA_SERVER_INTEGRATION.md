@@ -45,3 +45,9 @@
 - `pages.yml` і `staging.yml` жорстко задають `VITE_FINANCES_PRIVATE_UI=false`, тому наявна публічна демонстрація та staging залишаються синтетичними.
 - Новий **ручний** workflow `manual-private-finance-ui-build.yml` на `main` тестує типи та домен, збирає `VITE_FINANCES_PRIVATE_UI=true` у тимчасовий артефакт GitHub Actions. Цей workflow **не робить DEPLOY**, не змінює Caddy, PostgreSQL, S3, Lightsail чи Скринінг.
 - Наступний інженерний крок: перевірити налаштування HTTPS-домену/шляху на існуючому сервері без заміни публічної демонстрації, налаштувати авторизований gateway лише на loopback, ізольований приватний статичний UI й негативні security smoke-тести. Лише тоді — окреме ручне схвалення деплою та відкат.
+
+## Інкремент 6 — безпечний облік чинного HTTPS edge перед приватним деплоєм
+- У наявному `Manual finance T011 deploy (Lightsail)` додана **окрема ручна** операція `inspect-edge` (без approved_sha), після наявного finance-only preflight і через ту саму обмежену OIDC роль. Жодних змін у серверних конфігураціях або БД.
+- `deploy/finance-edge-readonly-inspect.sh` перевіряє, чи діє Caddy як системний сервіс або контейнер, чи є типовий Caddyfile, чи існують погоджені finance staging/public каталоги, й показує лише статус портів 80/443/8091/8092 як `loopback_only / nonloopback_listener / not_listening`.
+- Жодного виводу Caddyfile, доменів, IP, аргументів процесів, значень .env чи секретів. Жодних записів, рестартів або відкриття портів, крім уже наявного тимчасового SSH для самого workflow.
+- **Після запуску inspect-edge** визначити фактичний власник HTTPS gateway (Caddy host чи container), окремий приватний HTTPS origin, поточні routes та точний спосіб безпечного підключення **без** зміни маршруту Screening40. Далі — незалежний review конфігурації, TLS/auth/CSRF, ручне погодження деплою з rollback. Не запускати приватний gateway у відкритому доступі до review.
