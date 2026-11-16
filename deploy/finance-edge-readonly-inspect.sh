@@ -38,7 +38,7 @@ if command -v ss >/dev/null 2>&1; then
   for port in 80 443 8091 8092; do
     state="$(ss -lntH | awk -v p="$port" '
       $4 ~ (":" p "$") {
-        if ($4 ~ /^127\\.0\\.0\\.1:/ || $4 ~ /^\\[::1\\]:/) loopback=1;
+        if ($4 ~ /^127[.]0[.]0[.]1:/ || $4 ~ /^\[::1\]:/) loopback=1;
         else exposed=1;
       }
       END {if (exposed) print "nonloopback_listener"; else if(loopback) print "loopback_only"; else print "not_listening"; }
