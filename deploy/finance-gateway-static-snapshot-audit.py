@@ -119,11 +119,17 @@ def main():
     differences=compare.classify_startup_delta(saved,built)
     if not compare.validate_output(differences):
         fail("unsafe_startup_delta_output")
+    source_scanner=load_delta_classifier(Path(__file__).with_name("gateway-image-source-signals.py"))
+    source_signals=source_scanner.inspect_archive(SNAP/"original-gateway-image.tar")
+    if not source_scanner.validate_output(source_signals):
+        fail("unsafe_source_signal_output")
     # Never emit raw JSON, source variables, secrets, image identifiers or commands.
     for key in sorted(EXPECTED_FIELDS):
         print("FINANCE_GATEWAY_STATIC_"+key.upper()+"="+result[key],flush=True)
     for key in sorted(compare.CLASSES):
         print("FINANCE_GATEWAY_STARTUP_"+key.upper()+"="+differences[key],flush=True)
+    for key in sorted(source_scanner.FIXED):
+        print("FINANCE_GATEWAY_IMAGE_SOURCE_"+key.upper()+"="+source_signals[key],flush=True)
     print("FINANCE_GATEWAY_STATIC_ARCHIVE=checksum_verified",flush=True)
     print("FINANCE_GATEWAY_STATIC_LIVE_SERVICES=not_accessed",flush=True)
 
