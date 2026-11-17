@@ -54,6 +54,8 @@ jobs:
         run: python3 deploy/gateway-saved-startup-delta.test.py
       - name: Check bounded source signal scanner using fake Docker image layers
         run: python3 deploy/gateway-image-source-signals.test.py
+      - name: Classify exact saved startup script against fake Docker image layers
+        run: python3 deploy/gateway-entrypoint-source-audit.test.py
       - name: Synthetic Docker end-to-end gateway and finance API smoke (NO DEPLOY)
         run: |
           set -euo pipefail
