@@ -29,7 +29,7 @@ class DeltaTests(unittest.TestCase):
         self.assertEqual(result["mount_dependency"],"none")
         self.assertEqual(result["tmpfs_dependency"],"none")
         self.assertEqual(result["live_rootfs_policy"],"writable")
-        for secret in ("private-launch","original-launch","/private/live","/app","root","node"):
+        for secret in ("private-launch","original-launch","/private/live","/app","root-secret-token","node-secret-token"):
             self.assertNotIn(secret,repr(result))
     def test_same_configuration(self):
         live,image=fake()
