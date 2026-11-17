@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """T007: compare saved live-container startup metadata with saved image defaults.
 
-Pure functions; no Docker, subprocess, network, filesystem, or ENV access.
+Pure functions; no external execution, network, filesystem, or ENV access.
 Only fixed classifications are returned; raw commands/paths never leave host.
 """
 from collections.abc import Mapping
