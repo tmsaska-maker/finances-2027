@@ -39,10 +39,12 @@ def classify_metadata(container,image):
     ik=_keys(image)
     if ck is None or ik is None:
         return {"result":"metadata_invalid"}
-    if container.get("Image")!=image.get("Id"):
-        return {"result":"image_identity_mismatch"}
     if not re.fullmatch(r"sha256:[a-f0-9]{64}",str(image.get("Id",""))):
         return {"result":"metadata_invalid"}
+    if not re.fullmatch(r"sha256:[a-f0-9]{64}",str(container.get("Image",""))):
+        return {"result":"metadata_invalid"}
+    if container.get("Image")!=image.get("Id"):
+        return {"result":"image_identity_mismatch"}
     command=i.get("Entrypoint")
     args=i.get("Cmd")
     if command is not None and (not isinstance(command,list) or not all(isinstance(x,str) for x in command)):
