@@ -67,3 +67,32 @@ export function toFigmaCategoryOptions(catalogue: FinanceCategoryResponse): Arra
     parentId:x.parentId
   }));
 }
+
+/** Read-only category view model for the EXISTING Figma expenses screen.
+ * Project is part of the selection identity because categories are project-scoped.
+ * Historical free-text categories remain visible but are never treated as valid IDs.
+ */
+export const financeBusinessProjectNames: Record<'Амбулаторія'|'Скринінг'|'Психотерапія', FinanceProject> = {
+  'Амбулаторія':'ambulatory','Скринінг':'screening','Психотерапія':'psychotherapy'
+};
+export type BusinessCategoryCatalogues=Partial<Record<FinanceProject,FinanceCategoryResponse>>;
+export type ExpenseCategoryFilter={key:string;label:string;project:FinanceProject;categoryId:string};
+export function expenseCategoryFilters(catalogues:BusinessCategoryCatalogues):ExpenseCategoryFilter[] {
+  const result:ExpenseCategoryFilter[]=[];
+  for(const [label,project] of Object.entries(financeBusinessProjectNames)) {
+    const catalogue=catalogues[project];
+    if(!catalogue)continue;
+    for(const item of toFigmaCategoryOptions(catalogue)) {
+      result.push({key:project+':'+item.value,label:label+' · '+item.label,project,categoryId:item.value});
+    }
+  }
+  return result;
+}
+export function expenseCategoryName(
+  catalogues:BusinessCategoryCatalogues, projectName:string, storedCategory:string
+):string {
+  const project=financeBusinessProjectNames[projectName as keyof typeof financeBusinessProjectNames];
+  const catalogue=project?catalogues[project]:undefined;
+  if(!catalogue)return storedCategory;
+  return toFigmaCategoryOptions(catalogue).find(item=>item.value===storedCategory)?.label??storedCategory;
+}
