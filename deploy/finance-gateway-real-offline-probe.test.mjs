@@ -30,6 +30,14 @@ test('offline probe has no route to DB/host, uses only preserved image, fails cl
  assert.doesNotMatch(probe,/print\((?:obj|images|metadata|builtins|img|archive|check_line|old_id|api_id|probe)\)/);
  execFileSync('python3',['-c','import ast,sys; ast.parse(sys.stdin.read())'],{input:probe,encoding:'utf8'});
 });
+test('offline diagnostics emit only allowlisted exit and environment-key classifications',()=>{
+ for(const p of ['EXIT_CLASS','ENV_KEY_DELTA_CLASS','ENV_KEY_DELTA_COUNT_CLASS','classify_exit','classify_env_key_delta'])
+   assert.ok(probe.includes(p),'Missing diagnostic '+p);
+ assert.doesNotMatch(probe,/docker\s+logs|["']logs["']|process\.stdout|\bprint\((?:state|keys|missing|entries|builtins|key|value)\b/);
+ execFileSync('python3',['-m','unittest','discover','-s','deploy','-p','finance-gateway-offline-diagnostics.test.py','-v'],{
+   cwd:new URL('..',import.meta.url).pathname,encoding:'utf8'
+ });
+});
 test('production rollback gate must remain blocked despite old-image isolated launch',()=>{
  const gate=readFileSync(new URL('./gateway-release-gate.mjs',import.meta.url),'utf8');
  const doc=readFileSync(new URL('../docs/T007_REAL_GATEWAY_RECOVERY_CHECK.md',import.meta.url),'utf8');
