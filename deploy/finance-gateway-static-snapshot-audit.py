@@ -123,6 +123,10 @@ def main():
     source_signals=source_scanner.inspect_archive(SNAP/"original-gateway-image.tar")
     if not source_scanner.validate_output(source_signals):
         fail("unsafe_source_signal_output")
+    entry_scanner=load_delta_classifier(Path(__file__).with_name("gateway-entrypoint-source-audit.py"))
+    entry_signals=entry_scanner.inspect_startup(SNAP/"original-gateway-image.tar",saved)
+    if not entry_scanner.validate_output(entry_signals):
+        fail("unsafe_entrypoint_signal_output")
     # Never emit raw JSON, source variables, secrets, image identifiers or commands.
     for key in sorted(EXPECTED_FIELDS):
         print("FINANCE_GATEWAY_STATIC_"+key.upper()+"="+result[key],flush=True)
@@ -130,6 +134,8 @@ def main():
         print("FINANCE_GATEWAY_STARTUP_"+key.upper()+"="+differences[key],flush=True)
     for key in sorted(source_scanner.FIXED):
         print("FINANCE_GATEWAY_IMAGE_SOURCE_"+key.upper()+"="+source_signals[key],flush=True)
+    for key in sorted(entry_scanner.ALLOWED):
+        print("FINANCE_GATEWAY_ENTRYPOINT_"+key.upper()+"="+entry_signals[key],flush=True)
     print("FINANCE_GATEWAY_STATIC_ARCHIVE=checksum_verified",flush=True)
     print("FINANCE_GATEWAY_STATIC_LIVE_SERVICES=not_accessed",flush=True)
 
