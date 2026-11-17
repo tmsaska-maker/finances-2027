@@ -93,6 +93,7 @@ def main():
     try:images=json.loads(docker("image","inspect",img))
     except (ValueError,TypeError):fail("old_image_not_available")
     if len(images)!=1 or images[0].get("Id")!=img:fail("old_image_digest_not_cached")
+    if (images[0].get("Config") or {}).get("Volumes"):fail("old_image_declares_volumes")
     # Image-baked credentials would remain even without --env. Do not run if present.
     builtins=(images[0].get("Config") or {}).get("Env") or []
     for value in builtins:
@@ -106,6 +107,7 @@ def main():
     http_probe="unverified"
     try:
         # IMAGE ENTRYPOINT AND CMD retained. All values synthetic, no real token.
+        created=True  # cleanup by reserved unique name even if Docker run returns an error
         docker("run","-d","--name",NAME,"--pull","never","--restart","no",
                "--network","none","--read-only","--cap-drop","ALL",
                "--security-opt","no-new-privileges","--pids-limit","64",
@@ -116,7 +118,6 @@ def main():
                "--env","FINANCES_SESSION_SECRET=synthetic-only-no-real-secrets-1234567890123456789",
                "--env","FINANCES_OWNER_PASSWORD_HASH="+("a"*48)+":"+("b"*64),
                img,timeout=45)
-        created=True
         time.sleep(3)
         obj=json.loads(docker("inspect","--type","container",NAME))[0]
         host=obj.get("HostConfig") or {}
@@ -143,7 +144,7 @@ def main():
     finally:
         # Removes ONLY the explicitly-named ephemeral test container.
         if created:
-            subprocess.run(["docker","rm","-f",NAME],capture_output=True,text=True,timeout=20,check=False)
+            subprocess.run(["docker","rm","-fv",NAME],capture_output=True,text=True,timeout=20,check=False)
     assert_running_unchanged(old_id,api_id,img)
     out("OLD_IMAGE_ARCHIVE","checksum_verified")
     out("RUNTIME_BOOT",boot)
