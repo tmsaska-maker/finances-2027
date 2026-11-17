@@ -44,6 +44,8 @@ jobs:
         run: node --test deploy/finance-gateway-rollback-snapshot.test.mjs
       - name: Validate real old gateway offline runtime probe cannot touch live services
         run: node --test deploy/finance-gateway-real-offline-probe.test.mjs
+      - name: Test static legacy image startup contract without Docker or secrets
+        run: python3 deploy/gateway-static-startup-contract.test.py
       - name: Synthetic Docker end-to-end gateway and finance API smoke (NO DEPLOY)
         run: |
           set -euo pipefail
