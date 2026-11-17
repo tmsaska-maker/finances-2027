@@ -23,7 +23,7 @@ def tar_bytes(entries):
 
 def synthetic_image(sources, names=None):
     inner=tar_bytes(sources)
-    layer="layer-a/layer.tar"
+    layer=names if isinstance(names,str) else "layer-a/layer.tar"
     manifest=json.dumps([{"Config":"config.json","RepoTags":["fake:latest"],"Layers":[layer]}]).encode()
     return tar_bytes([("manifest.json",manifest),(layer,inner)])
 
@@ -39,8 +39,12 @@ class ImageSignalTests(unittest.TestCase):
     def test_detects_possible_write_and_env_without_leaking_contents(self):
         src=b'const private_token="TOP_SECRET_VALUE"; process.env["CUSTOM_SECRET"]; fs.writeFileSync("/private/token",private_token);'
         result=self.call(synthetic_image([("app/main.mjs",src)]))
-        self.assertEqual(result,{"source_coverage":"scanned",
-            "node_env_read_signal":"present","filesystem_write_api_signal":"present"})
+        self.assertEqual(result["source_coverage"],"scanned")
+        self.assertEqual(result["node_env_read_signal"],"present")
+        self.assertEqual(result["filesystem_write_api_signal"],"present")
+        self.assertEqual(result["archive_structure"],"docker_save_manifest")
+        self.assertEqual(result["layer_reference"],"accepted")
+        self.assertEqual(result["layer_parse"],"readable")
         for secret in ("TOP_SECRET_VALUE","CUSTOM_SECRET","/private/token","main.mjs"):
             self.assertNotIn(secret,repr(result))
 
@@ -73,8 +77,39 @@ class ImageSignalTests(unittest.TestCase):
 
     def test_reject_extra_output_fields(self):
         got={"source_coverage":"scanned","node_env_read_signal":"present",
-             "filesystem_write_api_signal":"present","private_source":"DO_NOT_LOG"}
+             "filesystem_write_api_signal":"present","archive_structure":"docker_save_manifest",
+             "layer_reference":"accepted","layer_parse":"readable","private_source":"DO_NOT_LOG"}
         self.assertFalse(scanner.validate_output(got))
+
+    def test_modern_digest_layer_names_are_accepted(self):
+        source=b'process.env.TOKEN; fs.writeFileSync("/tmp/p", "safe")'
+        for name in ("f"*64+".tar","blobs/sha256/"+"c"*64,"layers/opaque-digest"):
+            with self.subTest(name=name):
+                got=self.call(synthetic_image([("app/main.mjs",source)],names=name))
+                self.assertEqual(got["source_coverage"],"scanned")
+                self.assertEqual(got["layer_reference"],"accepted")
+                self.assertEqual(got["layer_parse"],"readable")
+                self.assertEqual(got["node_env_read_signal"],"present")
+
+    def test_missing_manifest_is_classified_without_leak(self):
+        got=self.call(tar_bytes([("other.json",b"PRIVATE_TOKEN=DO_NOT_PRINT")]))
+        self.assertEqual(got["archive_structure"],"manifest_missing")
+        self.assertEqual(got["source_coverage"],"unsupported")
+        self.assertNotIn("DO_NOT_PRINT",repr(got))
+
+    def test_bad_manifest_layer_reference_is_rejected(self):
+        got=self.call(synthetic_image([("app/main.js",b"code")],names="../secret.tar"))
+        self.assertEqual(got["layer_reference"],"rejected")
+        self.assertEqual(got["source_coverage"],"unsupported")
+
+    def test_invalid_layer_archive_is_classified(self):
+        name="noncanonical-layer"
+        manifest=json.dumps([{"Layers":[name]}]).encode()
+        got=self.call(tar_bytes([("manifest.json",manifest),(name,b"not a valid layer tar")]))
+        self.assertEqual(got["archive_structure"],"docker_save_manifest")
+        self.assertEqual(got["layer_reference"],"accepted")
+        self.assertEqual(got["layer_parse"],"unreadable")
+        self.assertEqual(got["source_coverage"],"unsupported")
 
     def test_no_runtime_apis(self):
         code=SOURCE.read_text()
