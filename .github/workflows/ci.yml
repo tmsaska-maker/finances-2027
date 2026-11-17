@@ -48,6 +48,8 @@ jobs:
         run: python3 deploy/gateway-static-startup-contract.test.py
       - name: Test static root-only snapshot audit on synthetic files (NO LIVE ACCESS)
         run: python3 deploy/finance-gateway-static-snapshot-audit.test.py
+      - name: Reject functional rollback readiness without verified synthetic contracts
+        run: python3 deploy/gateway-functional-rehearsal-gate.test.py
       - name: Synthetic Docker end-to-end gateway and finance API smoke (NO DEPLOY)
         run: |
           set -euo pipefail
