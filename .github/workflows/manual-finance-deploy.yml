@@ -14,6 +14,7 @@ on:
           - inspect-edge
           - snapshot-gateway
           - probe-gateway-offline
+          - inspect-gateway-snapshot
           - deploy
       approved_sha:
         description: "For deploy: exact 40-character main SHA; empty for preflight"
@@ -185,6 +186,9 @@ jobs:
           if [[ "$OPERATION" == probe-gateway-offline ]]; then
             scp "${SSH_OPTS[@]}" deploy/finance-gateway-real-offline-probe.py "$SSH_USER@$SSH_IP:$STAGE/finance-gateway-real-offline-probe.py"
           fi
+          if [[ "$OPERATION" == inspect-gateway-snapshot ]]; then
+            scp "${SSH_OPTS[@]}" deploy/finance-gateway-static-snapshot-audit.py deploy/gateway-static-startup-contract.py "$SSH_USER@$SSH_IP:$STAGE/"
+          fi
           if [[ "$OPERATION" == deploy ]]; then
             scp "${SSH_OPTS[@]}" server/sql/00{3,4,5,6}_*.sql "$SSH_USER@$SSH_IP:$STAGE/sql/"
             scp "${SSH_OPTS[@]}" "finances-api-${GITHUB_SHA}.tar.gz" "$SSH_USER@$SSH_IP:$STAGE/"
@@ -225,6 +229,15 @@ jobs:
           SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
           ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo python3 '/tmp/finances2027-${GITHUB_SHA}/finance-gateway-real-offline-probe.py' '8bf0f2b0a59909bbff3a667e7c025b192123acdc'"
           echo "Real old gateway offline startup probe finished. No live cutover or production rollback proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Inspect pinned old gateway snapshot metadata only (NO DOCKER / NO CUTOVER)
+        if: inputs.operation == 'inspect-gateway-snapshot'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo python3 '/tmp/finances2027-${GITHUB_SHA}/finance-gateway-static-snapshot-audit.py' '8bf0f2b0a59909bbff3a667e7c025b192123acdc'"
+          echo "Pinned gateway snapshot metadata-only check executed; production rollback NOT verified." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Finance backup and isolated restore test
         if: inputs.operation == 'deploy'

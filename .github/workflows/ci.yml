@@ -46,6 +46,8 @@ jobs:
         run: node --test deploy/finance-gateway-real-offline-probe.test.mjs
       - name: Test static legacy image startup contract without Docker or secrets
         run: python3 deploy/gateway-static-startup-contract.test.py
+      - name: Test static root-only snapshot audit on synthetic files (NO LIVE ACCESS)
+        run: python3 deploy/finance-gateway-static-snapshot-audit.test.py
       - name: Synthetic Docker end-to-end gateway and finance API smoke (NO DEPLOY)
         run: |
           set -euo pipefail
