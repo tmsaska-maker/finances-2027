@@ -83,7 +83,7 @@ def classify_exit(state):
     if isinstance(code,int) and 0<=code<=255:return "other_nonzero_exit"
     return "exit_status_unavailable"
 
-def classify_env_key_delta(original,synthetic=SYNTHETIC_KEYS):
+def classify_env_key_delta(original,image_env=(),synthetic=SYNTHETIC_KEYS):
     # Inspect only key NAMES. No values or raw dumps leave the host.
     entries=(original.get("Config") or {}).get("Env") or []
     if not isinstance(entries,list):return ("unavailable","unavailable")
@@ -91,7 +91,8 @@ def classify_env_key_delta(original,synthetic=SYNTHETIC_KEYS):
     for item in entries:
         if not isinstance(item,str) or "=" not in item:return ("unavailable","unavailable")
         keys.add(item.split("=",1)[0])
-    missing=keys-set(synthetic)
+    image_keys={x.split("=",1)[0] for x in image_env if isinstance(x,str) and "=" in x}
+    missing=keys-set(synthetic)-image_keys
     if not missing:return ("none","none")
     sensitive=any(re.search(r"TOKEN|SECRET|PASS|CREDENTIAL|KEY|AUTH|COOKIE",k,re.I) for k in missing)
     if sensitive:return ("additional_sensitive_key_names","one_or_more")
@@ -142,7 +143,7 @@ def main():
     boot="unverified"
     http_probe="unverified"
     exit_class="unavailable"
-    required_key_class,required_key_count=classify_env_key_delta(old)
+    required_key_class,required_key_count=classify_env_key_delta(old,builtins)
     try:
         # IMAGE ENTRYPOINT AND CMD retained. All values synthetic, no real token.
         created=True  # cleanup by reserved unique name even if Docker run returns an error
