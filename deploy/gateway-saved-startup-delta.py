@@ -50,9 +50,11 @@ def classify_startup_delta(container,image):
     cmd="unavailable" if "unavailable" in entries else ("different" if "different" in entries else "same")
     mounts=container.get("Mounts")
     binds=host.get("Binds")
-    if mounts is None or binds is None:
-        mount_state="unavailable"
-    elif not isinstance(mounts,list) or not isinstance(binds,list):
+    # Docker uses null for an absent bind list, but a missing Mounts field
+    # is insufficient evidence of isolation.
+    if binds is None:
+        binds=[]
+    if not isinstance(mounts,list) or not isinstance(binds,list):
         mount_state="unavailable"
     else:
         mount_state="present" if mounts or binds else "none"
