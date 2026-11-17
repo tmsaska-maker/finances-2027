@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import {strict as assert} from 'node:assert';
-import {loadFinanceCategories,toFigmaCategoryOptions,expenseCategoryFilters,expenseCategoryName} from './finance-categories.ts';
+import {loadFinanceCategories,toFigmaCategoryOptions,expenseCategoryFilters,expenseCategoryName,type FinanceCategoryResponse} from './finance-categories.ts';
 
 const expected={project:'personal',economicType:'expense',records:[
  {id:'per_food',code:'per_food',name:'Харчування',parentId:null,economicType:'expense',requirementKind:'unspecified',sortOrder:1},
@@ -28,11 +28,11 @@ test('T007 fail closed on unauthorized, contradictory, duplicated or unexpected 
 });
 
 test('existing Figma expense filters retain project-scoped stable IDs and group labels',()=>{
- const a={project:'ambulatory',economicType:'expense',records:[
+ const a:FinanceCategoryResponse={project:'ambulatory',economicType:'expense',records:[
   {id:'amb_rent',code:'amb_rent',name:'Оренда',parentId:null,economicType:'expense',requirementKind:'unspecified',sortOrder:0},
   {id:'amb_rent_office',code:'amb_rent_office',name:'Приміщення',parentId:'amb_rent',economicType:'expense',requirementKind:'unspecified',sortOrder:1}
- ]} as const;
- const b={project:'screening',economicType:'expense',records:[
+ ]};
+ const b:FinanceCategoryResponse={project:'screening',economicType:'expense',records:[
   {id:'amb_rent',code:'screen_rent',name:'Оренда для Скринінгу',parentId:null,economicType:'expense',requirementKind:'unspecified',sortOrder:0}
  ]} as const;
  const map={ambulatory:a,screening:b};
