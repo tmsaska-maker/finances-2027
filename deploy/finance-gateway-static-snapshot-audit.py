@@ -99,14 +99,31 @@ def load_classifier(path):
     spec.loader.exec_module(module)
     return module.classify_metadata
 
+def load_delta_classifier(path):
+    spec=importlib.util.spec_from_file_location("startup_delta",path)
+    if spec is None or spec.loader is None:fail("startup_delta_classifier_unavailable")
+    module=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 def main():
     if os.geteuid()!=0:fail("root_required")
     if sys.argv[1:]!=[SNAPSHOT_SHA]:fail("exact_snapshot_sha_required")
     classifier=load_classifier(Path(__file__).with_name("gateway-static-startup-contract.py"))
     result=validate_and_classify(SNAP,classifier)
+    # Static-only comparison of the SAVED live container with immutable image defaults.
+    # The verified snapshot is read again from root-owned files, not via Docker.
+    compare=load_delta_classifier(Path(__file__).with_name("gateway-saved-startup-delta.py"))
+    saved=read_private_json(SNAP/"running-container.json")
+    built=read_private_json(SNAP/"running-image.json")
+    differences=compare.classify_startup_delta(saved,built)
+    if not compare.validate_output(differences):
+        fail("unsafe_startup_delta_output")
     # Never emit raw JSON, source variables, secrets, image identifiers or commands.
     for key in sorted(EXPECTED_FIELDS):
         print("FINANCE_GATEWAY_STATIC_"+key.upper()+"="+result[key],flush=True)
+    for key in sorted(compare.CLASSES):
+        print("FINANCE_GATEWAY_STARTUP_"+key.upper()+"="+differences[key],flush=True)
     print("FINANCE_GATEWAY_STATIC_ARCHIVE=checksum_verified",flush=True)
     print("FINANCE_GATEWAY_STATIC_LIVE_SERVICES=not_accessed",flush=True)
 
