@@ -187,7 +187,7 @@ jobs:
             scp "${SSH_OPTS[@]}" deploy/finance-gateway-real-offline-probe.py "$SSH_USER@$SSH_IP:$STAGE/finance-gateway-real-offline-probe.py"
           fi
           if [[ "$OPERATION" == inspect-gateway-snapshot ]]; then
-            scp "${SSH_OPTS[@]}" deploy/finance-gateway-static-snapshot-audit.py deploy/gateway-static-startup-contract.py deploy/gateway-saved-startup-delta.py "$SSH_USER@$SSH_IP:$STAGE/"
+            scp "${SSH_OPTS[@]}" deploy/finance-gateway-static-snapshot-audit.py deploy/gateway-static-startup-contract.py deploy/gateway-saved-startup-delta.py deploy/gateway-image-source-signals.py "$SSH_USER@$SSH_IP:$STAGE/"
           fi
           if [[ "$OPERATION" == deploy ]]; then
             scp "${SSH_OPTS[@]}" server/sql/00{3,4,5,6}_*.sql "$SSH_USER@$SSH_IP:$STAGE/sql/"
