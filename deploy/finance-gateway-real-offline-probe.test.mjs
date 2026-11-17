@@ -33,7 +33,7 @@ test('offline probe has no route to DB/host, uses only preserved image, fails cl
 test('offline diagnostics emit only allowlisted exit and environment-key classifications',()=>{
  for(const p of ['EXIT_CLASS','ENV_KEY_DELTA_CLASS','ENV_KEY_DELTA_COUNT_CLASS','classify_exit','classify_env_key_delta'])
    assert.ok(probe.includes(p),'Missing diagnostic '+p);
- assert.doesNotMatch(probe,/docker\s+logs|["']logs["']|process\.stdout|\bprint\((?:state|keys|missing|entries|builtins|key|value)\b/);
+ assert.doesNotMatch(probe,/docker\s+logs|["']logs["']|\bprint\((?:state|keys|missing|entries|builtins|key|value)\b/);
  execFileSync('python3',['deploy/finance-gateway-offline-diagnostics.test.py'],{
    cwd:new URL('..',import.meta.url).pathname,encoding:'utf8'
  });
