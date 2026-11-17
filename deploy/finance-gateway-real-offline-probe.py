@@ -100,6 +100,26 @@ def classify_env_key_delta(original,image_env=(),synthetic=SYNTHETIC_KEYS):
         return ("additional_network_or_runtime_key_names","one_or_more")
     return ("additional_other_key_names","one_or_more")
 
+
+def classify_missing_sensitive_family(original,image_env=(),synthetic=SYNTHETIC_KEYS):
+    """Broad missing-ENV family only. No key names, values, or counts leave the host."""
+    entries=(original.get("Config") or {}).get("Env")
+    if entries is None:return "unavailable"
+    if not isinstance(entries,list):return "unavailable"
+    keys=set()
+    for item in entries:
+        if not isinstance(item,str) or "=" not in item:return "unavailable"
+        keys.add(item.split("=",1)[0])
+    image_keys={x.split("=",1)[0] for x in image_env if isinstance(x,str) and "=" in x}
+    missing=keys-set(synthetic)-image_keys
+    sensitive={k for k in missing if re.search(r"TOKEN|SECRET|PASS|CREDENTIAL|KEY|AUTH|COOKIE",k,re.I)}
+    if not sensitive:return "none"
+    auth=any(re.search(r"TOKEN|SESSION|PASSWORD|PASS|AUTH|COOKIE",k,re.I) for k in sensitive)
+    other=any(not re.search(r"TOKEN|SESSION|PASSWORD|PASS|AUTH|COOKIE",k,re.I) for k in sensitive)
+    if auth and other:return "mixed_sensitive_families"
+    if auth:return "authentication_or_session"
+    return "other_sensitive_configuration"
+
 def main():
     if os.geteuid()!=0:fail("root_required")
     if sys.argv[1:]!=[SNAPSHOT_SHA]:fail("exact_snapshot_sha_required")
@@ -193,6 +213,7 @@ def main():
     out("EXIT_CLASS",exit_class)
     out("ENV_KEY_DELTA_CLASS",required_key_class)
     out("ENV_KEY_DELTA_COUNT_CLASS",required_key_count)
+    out("MISSING_SENSITIVE_FAMILY",classify_missing_sensitive_family(old,builtins))
     out("ANONYMOUS_RESPONSE",http_probe)
     out("LIVE_GATEWAY","unchanged")
     out("LIVE_API","unchanged")

@@ -44,5 +44,24 @@ class OfflineClassificationTests(unittest.TestCase):
         self.assertEqual(probe.classify_env_key_delta({"Config":{"Env":None}}),("none","none"))
         self.assertEqual(probe.classify_env_key_delta({"Config":{"Env":[42]}}),("unavailable","unavailable"))
 
+
+    def test_sensitive_family_is_fixed_vocabulary_only(self):
+        cases=[
+            (["PATH=/bin"],"none"),
+            (["FINANCES_ACCESS_TOKEN=top-secret"],"authentication_or_session"),
+            (["PRIVATE_SIGNING_KEY=top-secret"],"other_sensitive_configuration"),
+            (["FINANCES_ACCESS_TOKEN=top-secret","PRIVATE_SIGNING_KEY=top-secret"],"mixed_sensitive_families"),
+        ]
+        for entries,expected in cases:
+            with self.subTest(expected=expected):
+                result=probe.classify_missing_sensitive_family({"Config":{"Env":entries}},["PATH=/bin"])
+                self.assertEqual(result,expected)
+                self.assertNotIn("top-secret",result)
+                self.assertNotIn("FINANCES_ACCESS_TOKEN",result)
+                self.assertNotIn("PRIVATE_SIGNING_KEY",result)
+        self.assertEqual(probe.classify_missing_sensitive_family({"Config":{"Env":None}}),"unavailable")
+        self.assertEqual(probe.classify_missing_sensitive_family({"Config":{"Env":[123]}}),"unavailable")
+        self.assertEqual(probe.classify_missing_sensitive_family({"Config":{"Env":["FINANCES_ACCESS_TOKEN=real"]}},["FINANCES_ACCESS_TOKEN=baked"]),"none")
+
 if __name__=="__main__":
     unittest.main()
