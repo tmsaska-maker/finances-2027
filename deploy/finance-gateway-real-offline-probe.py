@@ -168,8 +168,6 @@ def main():
         if state.get("Running"):
             boot="running_with_synthetic_inputs"
             exit_class="process_running"
-        else:
-            exit_class=classify_exit(state)
             # No logs or response bodies. The old image might lack Node / use another endpoint.
             code=r"""const http=require('node:http');const q=http.get('http://127.0.0.1:8092/finance-api/session',r=>{r.resume();process.stdout.write(String(r.statusCode));});q.setTimeout(1500,()=>q.destroy());q.on('error',()=>process.stdout.write('unavailable'));"""
             probe=subprocess.run(["docker","exec",NAME,"node","-e",code],
@@ -184,6 +182,7 @@ def main():
                 http_probe="unavailable"
         else:
             boot="exited_without_live_secrets"
+            exit_class=classify_exit(state)
     finally:
         # Removes ONLY the explicitly-named ephemeral test container.
         if created:
