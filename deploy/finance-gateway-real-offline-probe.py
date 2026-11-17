@@ -63,6 +63,42 @@ def assert_running_unchanged(gateway_id,api_id,old_image):
     if not gw.get("State",{}).get("Running") or not api.get("State",{}).get("Running"):
         fail("live_finance_service_not_running")
 
+# Categorize only Docker metadata and ENV *key presence*. Never print values,
+# raw logs, process args, hostnames, or actual environment-variable names.
+SYNTHETIC_KEYS=frozenset({
+    "NODE_ENV","FINANCES_PUBLIC_ORIGIN","FINANCES_API_TOKEN",
+    "FINANCES_SESSION_SECRET","FINANCES_OWNER_PASSWORD_HASH"
+})
+def classify_exit(state):
+    if state.get("OOMKilled") is True:return "oom_killed"
+    if state.get("Error"):return "runtime_error_present"
+    code=state.get("ExitCode")
+    if code==0:return "clean_exit"
+    if code==1:return "application_exit_1"
+    if code==2:return "application_exit_2"
+    if code==126:return "cannot_execute"
+    if code==127:return "command_not_found"
+    if code==137:return "signal_kill_or_oom"
+    if code==143:return "termination_signal"
+    if isinstance(code,int) and 0<=code<=255:return "other_nonzero_exit"
+    return "exit_status_unavailable"
+
+def classify_env_key_delta(original,synthetic=SYNTHETIC_KEYS):
+    # Inspect only key NAMES. No values or raw dumps leave the host.
+    entries=(original.get("Config") or {}).get("Env") or []
+    if not isinstance(entries,list):return ("unavailable","unavailable")
+    keys=set()
+    for item in entries:
+        if not isinstance(item,str) or "=" not in item:return ("unavailable","unavailable")
+        keys.add(item.split("=",1)[0])
+    missing=keys-set(synthetic)
+    if not missing:return ("none","none")
+    sensitive=any(re.search(r"TOKEN|SECRET|PASS|CREDENTIAL|KEY|AUTH|COOKIE",k,re.I) for k in missing)
+    if sensitive:return ("additional_sensitive_key_names","one_or_more")
+    if any(re.search(r"HOST|PORT|URL|ORIGIN|NODE_ENV|MODE|CONFIG",k,re.I) for k in missing):
+        return ("additional_network_or_runtime_key_names","one_or_more")
+    return ("additional_other_key_names","one_or_more")
+
 def main():
     if os.geteuid()!=0:fail("root_required")
     if sys.argv[1:]!=[SNAPSHOT_SHA]:fail("exact_snapshot_sha_required")
@@ -105,6 +141,8 @@ def main():
     created=False
     boot="unverified"
     http_probe="unverified"
+    exit_class="unavailable"
+    required_key_class,required_key_count=classify_env_key_delta(old)
     try:
         # IMAGE ENTRYPOINT AND CMD retained. All values synthetic, no real token.
         created=True  # cleanup by reserved unique name even if Docker run returns an error
@@ -125,8 +163,12 @@ def main():
             fail("offline_isolation_mismatch")
         if not host.get("ReadonlyRootfs") or host.get("Privileged") or host.get("Binds") or obj.get("Mounts"):
             fail("offline_filesystem_isolation_mismatch")
-        if (obj.get("State") or {}).get("Running"):
+        state=obj.get("State") or {}
+        if state.get("Running"):
             boot="running_with_synthetic_inputs"
+            exit_class="process_running"
+        else:
+            exit_class=classify_exit(state)
             # No logs or response bodies. The old image might lack Node / use another endpoint.
             code=r"""const http=require('node:http');const q=http.get('http://127.0.0.1:8092/finance-api/session',r=>{r.resume();process.stdout.write(String(r.statusCode));});q.setTimeout(1500,()=>q.destroy());q.on('error',()=>process.stdout.write('unavailable'));"""
             probe=subprocess.run(["docker","exec",NAME,"node","-e",code],
@@ -148,6 +190,9 @@ def main():
     assert_running_unchanged(old_id,api_id,img)
     out("OLD_IMAGE_ARCHIVE","checksum_verified")
     out("RUNTIME_BOOT",boot)
+    out("EXIT_CLASS",exit_class)
+    out("ENV_KEY_DELTA_CLASS",required_key_class)
+    out("ENV_KEY_DELTA_COUNT_CLASS",required_key_count)
     out("ANONYMOUS_RESPONSE",http_probe)
     out("LIVE_GATEWAY","unchanged")
     out("LIVE_API","unchanged")
