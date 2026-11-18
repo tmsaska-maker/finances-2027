@@ -30,6 +30,15 @@ export const confirmMonthlyForecast=(sourceMonth:string,targetMonth:string,selec
  request<{month:string;inserted:number;records:MonthlyLine[]}>('/confirm','POST',{
   sourceMonth,targetMonth,selectedIds,edits
  },fetcher);
+export const reviseMonthlyForecast=(line:MonthlyLine,amountMinor:number,dueDate:string,fetcher?:Fetcher)=>
+ request<{changed:boolean;record:MonthlyLine}>('/revise','POST',{
+  id:line.id,month:line.month,expectedAmountMinor:line.amountMinor,
+  expectedDueDate:line.dueDate,amountMinor,dueDate
+ },fetcher);
+export type ForecastRevision={id:string;forecastLineId:string;
+ oldAmountMinor:number;newAmountMinor:number;oldDueDate:string;newDueDate:string;revisedAt:string};
+export const loadMonthlyForecastHistory=(id:string,fetcher?:Fetcher)=>
+ request<{id:string;records:ForecastRevision[]}>('/history?id='+encodeURIComponent(id),'GET',undefined,fetcher);
 export function parseForecastMoney(text:string):number {
  if(!/^(?:0|[1-9]\d{0,12})(?:[.,]\d{1,2})?$/.test(text.trim()))throw Error('Введи додатну суму з точністю до копійок');
  const [whole,part='']=text.trim().replace(',','.').split('.');
