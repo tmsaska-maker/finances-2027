@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 const probe=readFileSync(new URL('./finance-gateway-real-offline-probe.py',import.meta.url),'utf8');
 const workflow=readFileSync(new URL('../.github/workflows/manual-finance-deploy.yml',import.meta.url),'utf8');
-test('only manual finance operation can attempt the genuine old image offline probe',()=>{
+test('manual finance workflow no longer invokes gateway offline probe',()=>{
  assert.match(workflow,/^  workflow_dispatch:/m);
  assert.match(workflow,/          - probe-gateway-offline/);
  assert.match(workflow,/if: inputs.operation == 'probe-gateway-offline'/);
