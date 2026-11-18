@@ -89,20 +89,45 @@ export function createFinanceBrowserGateway({publicOrigin,apiOrigin='http://127.
       return response(res,200,{authenticated:false},{'set-cookie':COOKIE+'=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict'});
     }
     if(!parseSession(req.headers.cookie,sessionSecret,now(),active))return response(res,401,{error:'Unauthorized'});
-    if(req.method!=='GET')return response(res,405,{error:'Read-only gateway'});
-    const allowed=(url.pathname==='/finance-api/obligations'&&!url.search) ||
-      (url.pathname==='/finance-api/categories' &&
+    const forecastGet=req.method==='GET' && url.pathname==='/finance-api/forecast/monthly' &&
+      [...url.searchParams.keys()].every(k=>k==='month') && url.searchParams.getAll('month').length===1 &&
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(url.searchParams.get('month'));
+    const forecastPost=req.method==='POST' && !url.search &&
+      ['/finance-api/forecast/monthly/lines','/finance-api/forecast/monthly/preview','/finance-api/forecast/monthly/confirm'].includes(url.pathname);
+    const allowed=(req.method==='GET' && url.pathname==='/finance-api/obligations'&&!url.search) ||
+      (req.method==='GET' && url.pathname==='/finance-api/categories' &&
         [...url.searchParams.keys()].every(k=>['project','type'].includes(k)) &&
         url.searchParams.getAll('project').length===1 &&
-        url.searchParams.getAll('type').length<=1);
-    if(!allowed)return response(res,404,{error:'Unknown finance endpoint'});
+        url.searchParams.getAll('type').length<=1) || forecastGet || forecastPost;
+    if(!allowed)return response(res,req.method==='POST'?405:404,{error:'Unknown finance endpoint'});
+    let payload;
+    if(forecastPost) {
+      if(req.headers.origin!==origin.origin)return response(res,403,{error:'Origin required'});
+      if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
+        return response(res,415,{error:'JSON content type required'});
+      const chunks=[];let size=0;
+      for await(const chunk of req) {
+        size+=chunk.length;
+        if(size>32768)return response(res,413,{error:'Body too large'});
+        chunks.push(chunk);
+      }
+      payload=Buffer.concat(chunks);
+      try{const value=JSON.parse(payload.toString('utf8'));
+        if(!value||typeof value!=='object'||Array.isArray(value))return response(res,400,{error:'JSON object required'});
+      }catch{return response(res,400,{error:'Invalid JSON'});}
+    }
     try{
       const target=url.pathname.slice('/finance-api'.length)+url.search;
-      const upstream=await fetch(api.origin+target,{headers:{authorization:'Bearer '+apiToken},signal:AbortSignal.timeout(5000)});
-      if(!upstream.ok)return response(res,upstream.status,{error:'Finance API unavailable'});
+      const upstream=await fetch(api.origin+target,{
+        method:req.method,
+        headers:{authorization:'Bearer '+apiToken,...(forecastPost?{'content-type':'application/json'}:{})},
+        ...(forecastPost?{body:payload}:{}),
+        signal:AbortSignal.timeout(5000)
+      });
+      if(!upstream.ok)return response(res,upstream.status,{error:'Finance API rejected or unavailable'});
       const text=await upstream.text();
       if(text.length>1048576)return response(res,502,{error:'Finance response too large'});
-      res.writeHead(200,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});
+      res.writeHead(forecastPost?201:200,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});
       return res.end(text);
     }catch{
       return response(res,502,{error:'Finance API unavailable'});

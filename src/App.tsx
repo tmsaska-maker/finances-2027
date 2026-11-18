@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import ServerExpenses from "./ServerExpenses"
 import PrivateFinanceGate from "./PrivateFinanceGate"
+import PrivateMonthlyPlanning from "./PrivateMonthlyPlanning"
 import { loadReadOnlyFinanceExpenses } from "./domain/live-finance-expenses"
 import {loadFinanceCategories,expenseCategoryFilters,expenseCategoryName,financeBusinessProjectNames,type BusinessCategoryCatalogues} from "./domain/finance-categories"
 import { readDemoSession, saveDemoSession, toKopiykas, toMinor, type DemoExpense, type DemoPending } from "./domain/expense-session"
@@ -335,7 +336,7 @@ function FinanceDashboardApp({ privateLogout }: { privateLogout?: () => Promise<
               : "content personal-content"
           }
         >
-          {privateFinanceMode && !(space === "business" && screen === "expenses") ?
+          {privateFinanceMode && !(space === "business" && (screen === "expenses" || screen === "planning")) ?
             <section className="table-card finance-private-pending" role="status"><Icon name="shield" size={22}/><h2>Розділ готується до підключення</h2><p>Цей екран уже існує в погодженому дизайні Figma, але його дані ще не підключено до захищеної PostgreSQL. Демонстраційні суми тут навмисно не показуємо.</p><button className="secondary" type="button" onClick={() => {setSpace("business");setScreen("expenses")}}>Перейти до реєстру зобов’язань</button></section>
           : space === "business" && (
             <>
@@ -351,12 +352,9 @@ function FinanceDashboardApp({ privateLogout }: { privateLogout?: () => Promise<
                 ? <ServerExpenses />
                 : <ExpensesScreen project={direction} setProject={setDirection} navigate={navigate} notify={notify} privateMode={privateFinanceMode} />
               )}
-              {screen === "planning" && (
-                <Planning
-                  notify={notify}
-                  project={direction}
-                  setProject={setDirection}
-                />
+              {screen === "planning" && (privateFinanceMode
+                ? <><ProjectSwitcher project={direction} setProject={setDirection}/><PrivateMonthlyPlanning notify={notify} project={direction} setProject={setDirection}/></>
+                : <Planning notify={notify} project={direction} setProject={setDirection}/>
               )}
               {screen === "payroll" && <Payroll notify={notify} />}
               {screen === "taxes" && <Taxes notify={notify} />}
