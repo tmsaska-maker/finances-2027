@@ -124,9 +124,8 @@ if ! cmp -s /etc/caddy/Caddyfile "$STAGE/Caddyfile.candidate";then
  caddy reload --config "$STAGE/Caddyfile.candidate" --adapter caddyfile >/dev/null 2>&1 || { echo 'Finance route reload failed'; exit 1; }
  install -m 644 "$STAGE/Caddyfile.candidate" /etc/caddy/Caddyfile
 fi
-# The static finance site is protected by the existing outer Caddy Basic
-# credentials. API paths are reached only through the owner-session gateway.
-# Verify both boundaries; never send a real password to these probes.
+# Finance has ONE owner password at the cookie-session gateway. The static
+# login page is public; backend records must require an authenticated session.
 python3 - <<'PY'
 import json,subprocess
 host='finances.screening40.com.ua'
@@ -146,17 +145,20 @@ def probe(path,method='GET',body=None):
  if not status:return None,header.lower(),data
  return status[-1],header.lower(),data
 site,head,_=probe('/')
-if site!='401' or 'www-authenticate: basic realm="restricted"' not in head:
- raise SystemExit('Finance static site outer Basic protection missing')
+if site!='200' or 'www-authenticate: basic' in head:
+ raise SystemExit('Finance login page unavailable without outer Basic')
 session,head,data=probe('/finance-api/session')
 try:state=json.loads(data)
 except ValueError:raise SystemExit('Finance browser session JSON missing')
-if session!='200' or state!={'authenticated':False}:
- raise SystemExit('Finance API not reachable without outer Basic prompt')
+if session!='200' or state!={'authenticated':False} or 'www-authenticate: basic' in head:
+ raise SystemExit('Finance API session unavailable')
+records,head,_=probe('/finance-api/obligations')
+if records!='401' or 'www-authenticate: basic' in head:
+ raise SystemExit('Finance records are not protected by owner gateway')
 login,head,_=probe('/finance-api/login','POST','{')
 if login!='400' or 'www-authenticate: basic' in head:
- raise SystemExit('Finance login route intercepted by outer Basic protection')
-print('Finance HTTPS page Basic PASS; gateway anonymous session PASS; gateway login routing PASS')
+ raise SystemExit('Finance login endpoint unavailable')
+print('Finance HTTPS one-password routing PASS')
 PY
 tar -xzf "$UI_TAR" -C "$SITE" --no-same-owner
 test "$(cat "$SITE/revision.txt")" = "$SHA"
