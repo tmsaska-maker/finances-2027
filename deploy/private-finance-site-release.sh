@@ -124,14 +124,34 @@ if ! cmp -s /etc/caddy/Caddyfile "$STAGE/Caddyfile.candidate";then
  caddy reload --config "$STAGE/Caddyfile.candidate" --adapter caddyfile >/dev/null 2>&1 || { echo 'Finance route reload failed'; exit 1; }
  install -m 644 "$STAGE/Caddyfile.candidate" /etc/caddy/Caddyfile
 fi
+# Preserve the existing Caddy HTTP Basic Authentication. An unauthenticated
+# HTTPS probe must receive 401 + the exact known Basic challenge, not 200.
+# The inner gateway was independently verified above using 127.0.0.1:8092.
 python3 - <<'PY'
-import json,subprocess
-p=subprocess.run(['curl','--silent','--show-error','--fail','--max-time','8','--resolve','finances.screening40.com.ua:443:127.0.0.1','https://finances.screening40.com.ua/finance-api/session'],capture_output=True,text=True,timeout=12)
-if p.returncode!=0:raise SystemExit('Finance HTTPS session route unavailable')
-try:d=json.loads(p.stdout)
-except ValueError:raise SystemExit('Finance HTTPS session did not return JSON')
-if d!={'authenticated':False}:raise SystemExit('Finance HTTPS session not anonymous')
-print('Finance HTTPS session PASS')
+import re,subprocess
+host='finances.screening40.com.ua'
+p=subprocess.run(['curl','--silent','--show-error','--max-time','8',
+ '--resolve',host+':443:127.0.0.1',
+ '--dump-header','-','--output','/dev/null',
+ 'https://'+host+'/finance-api/session'],
+ capture_output=True,text=True,timeout=12)
+if p.returncode!=0:
+ raise SystemExit('Finance HTTPS transport failed (Caddy access was not confirmed)')
+headers=p.stdout.replace('\r\n','\n')
+responses=re.findall(r'(?im)^HTTP/(?:1(?:\.0|\.1)?|2|3)\s+(\d{3})\s*
+tar -xzf "$UI_TAR" -C "$SITE" --no-same-owner
+test "$(cat "$SITE/revision.txt")" = "$SHA"
+echo 'PRIVATE_FINANCE_SITE_DEPLOY_PASS: existing site, gateway and finance DB only; no backup.'
+,headers)
+if not responses or responses[-1]!='401':
+ raise SystemExit('Expected existing finance HTTPS Basic authentication challenge (401)')
+if not re.search(r'(?im)^www-authenticate:\s*Basic\s+realm="restricted"\s*
+tar -xzf "$UI_TAR" -C "$SITE" --no-same-owner
+test "$(cat "$SITE/revision.txt")" = "$SHA"
+echo 'PRIVATE_FINANCE_SITE_DEPLOY_PASS: existing site, gateway and finance DB only; no backup.'
+,headers):
+ raise SystemExit('Expected existing finance Caddy Basic authentication realm')
+print('Finance HTTPS outer Basic protection PASS; inner gateway session PASS')
 PY
 tar -xzf "$UI_TAR" -C "$SITE" --no-same-owner
 test "$(cat "$SITE/revision.txt")" = "$SHA"
