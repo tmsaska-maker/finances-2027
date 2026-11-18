@@ -113,6 +113,15 @@ test('T015 monthly browser API uses owner session plus origin check and never ex
   assert.equal(seen[0].body,body);
   assert.equal(seen[0].auth,'Bearer '+API_TOKEN);
   assert.equal(seen[1].path,'/forecast/monthly?month=2026-12');
+  const revisePath='/finance-api/forecast/monthly/revise';
+  assert.equal((await fetch(base+revisePath,{...opts,headers:{...opts.headers,cookie,origin:'https://evil.example'}})).status,403);
+  assert.equal((await fetch(base+revisePath,{...opts,headers:{...opts.headers,cookie}})).status,201);
+  const audit=await fetch(base+'/finance-api/forecast/monthly/history?id=recurring:2026-12:ambulatory:rent',{headers:{cookie}});
+  assert.equal(audit.status,200);
+  assert.equal(seen[2].path,'/forecast/monthly/revise');
+  assert.equal(seen[2].auth,'Bearer '+API_TOKEN);
+  assert.equal(seen[3].path,'/forecast/monthly/history?id=recurring:2026-12:ambulatory:rent');
+  assert.equal((await fetch(base+'/finance-api/forecast/monthly/history?id=bad&extra=1',{headers:{cookie}})).status,404);
   assert.equal((await fetch(base+'/finance-api/forecast/monthly?month=2026-99',{headers:{cookie}})).status,404);
  }finally{if(gate)await close(gate);if(upstream)await close(upstream);}
 });
