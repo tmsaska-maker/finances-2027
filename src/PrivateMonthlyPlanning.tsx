@@ -76,7 +76,7 @@ export default function PrivateMonthlyPlanning({project,setProject,notify}:{
    await createMonthlyLine({
     month:sourceMonth,project:activeId,categoryId:category,title:name.trim(),currency:"UAH",
     amountMinor:parseForecastMoney(amount),dueDate:sourceMonth+"-"+String(dueDay).padStart(2,"0"),
-    sourceTemplateId:"rec_"+crypto.randomUUID().replaceAll("-",""),recurring:true,amountKind:kind
+    sourceTemplateId:"rec_"+crypto.randomUUID().replace(/-/g,""),recurring:true,amountKind:kind
    });
    setSeed(false);setName("");setAmount("");notify("Повторювану основу збережено в "+sourceMonth);
   }catch(e){fail(e)}finally{setBusy(false)}
