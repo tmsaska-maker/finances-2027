@@ -207,7 +207,7 @@ test('private finance release keeps one existing website, gateway and DB',()=>{
  for(const token of ['SITE="$ROOT/site"','FINANCES_GATEWAY_API_ORIGIN: http://api:8091','127.0.0.1:8092:8092','FINANCES_OWNER_PASSWORD_HASH','handle /finance-api/*','caddy validate','caddy reload','--no-build --no-deps gateway','PRIVATE_FINANCE_SITE_DEPLOY_PASS']) {
   assert.ok(script.includes(token),'Missing private release safeguard: '+token);
  }
- for(const token of ["statuses[-1][1]!='401'",'www-authenticate:', 'realm="restricted"', 'Finance HTTPS outer Basic protection PASS']) {
+ for(const token of ["site!='401'","session!='200'","login!='400'",'www-authenticate: basic realm="restricted"', 'Finance HTTPS page Basic PASS']) {
   assert.ok(script.includes(token),'Private site must preserve existing outer Caddy Basic protection: '+token);
  }
  assert.ok(!script.includes("'--fail','--max-time','8','--resolve'"),'Do not reject expected HTTPS 401 before evaluating its challenge');
