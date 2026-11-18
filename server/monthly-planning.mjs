@@ -21,7 +21,7 @@ function requireAmount(value) {
   return value;
 }
 function requireMonth(month) {
-  if(typeof month!=='string'||!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month))
+  if(typeof month!=='string'||!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
     throw Error('Invalid forecast month');
   return month;
 }
@@ -38,7 +38,7 @@ function dueDateFor(month,day) {
   return month+'-'+String(Math.min(day,lastDay(month))).padStart(2,'0');
 }
 function requireDate(date,month) {
-  if(typeof date!=='string'||date.slice(0,7)!==month||!/^(\\d{4})-(\\d{2})-(\\d{2})$/.test(date))
+  if(typeof date!=='string'||date.slice(0,7)!==month||!/^(\d{4})-(\d{2})-(\d{2})$/.test(date))
     throw Error('Forecast payment date must belong to target month');
   const day=Number(date.slice(8,10));
   if(day<1||day>lastDay(month))throw Error('Invalid forecast payment date');
