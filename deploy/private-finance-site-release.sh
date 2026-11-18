@@ -124,28 +124,39 @@ if ! cmp -s /etc/caddy/Caddyfile "$STAGE/Caddyfile.candidate";then
  caddy reload --config "$STAGE/Caddyfile.candidate" --adapter caddyfile >/dev/null 2>&1 || { echo 'Finance route reload failed'; exit 1; }
  install -m 644 "$STAGE/Caddyfile.candidate" /etc/caddy/Caddyfile
 fi
-# Preserve the existing Caddy HTTP Basic Authentication. An unauthenticated
-# HTTPS probe must receive 401 + the exact known Basic challenge, not 200.
-# The inner gateway was independently verified above using 127.0.0.1:8092.
+# The static finance site is protected by the existing outer Caddy Basic
+# credentials. API paths are reached only through the owner-session gateway.
+# Verify both boundaries; never send a real password to these probes.
 python3 - <<'PY'
-import subprocess
+import json,subprocess
 host='finances.screening40.com.ua'
-p=subprocess.run([
- 'curl','--silent','--show-error','--max-time','8',
- '--resolve',host+':443:127.0.0.1',
- '--dump-header','-','--output','/dev/null',
- 'https://'+host+'/finance-api/session'
-],capture_output=True,text=True,timeout=12)
-if p.returncode!=0:
- raise SystemExit('Finance HTTPS transport failed')
-lines=p.stdout.splitlines()
-statuses=[line.split() for line in lines if line.startswith('HTTP/')]
-if not statuses or len(statuses[-1])<2 or statuses[-1][1]!='401':
- raise SystemExit('Expected Caddy outer Basic 401 challenge')
-challenges=[line.partition(':')[2].strip() for line in lines if line.lower().startswith('www-authenticate:')]
-if not any(value=='Basic realm="restricted"' for value in challenges):
- raise SystemExit('Expected Caddy outer Basic realm restricted')
-print('Finance HTTPS outer Basic protection PASS; inner gateway session PASS')
+def probe(path,method='GET',body=None):
+ cmd=['curl','--silent','--show-error','--max-time','8',
+      '--resolve',host+':443:127.0.0.1',
+      '--dump-header','-','--output','-','--request',method]
+ if body is not None:
+  cmd+=['--header','Origin: https://'+host,'--header','Content-Type: application/json','--data-binary',body]
+ cmd+=['https://'+host+path]
+ p=subprocess.run(cmd,capture_output=True,text=True,timeout=12)
+ if p.returncode!=0:raise SystemExit('Finance HTTPS transport unavailable')
+ result=p.stdout.replace('\r\n','\n').split('\n\n',1)
+ if len(result)!=2:raise SystemExit('Finance HTTPS response malformed')
+ header,data=result
+ status=[line.split()[1] for line in header.splitlines() if line.startswith('HTTP/')]
+ if not status:return None,header.lower(),data
+ return status[-1],header.lower(),data
+site,head,_=probe('/')
+if site!='401' or 'www-authenticate: basic realm="restricted"' not in head:
+ raise SystemExit('Finance static site outer Basic protection missing')
+session,head,data=probe('/finance-api/session')
+try:state=json.loads(data)
+except ValueError:raise SystemExit('Finance browser session JSON missing')
+if session!='200' or state!={'authenticated':False}:
+ raise SystemExit('Finance API not reachable without outer Basic prompt')
+login,head,_=probe('/finance-api/login','POST','{')
+if login!='400' or 'www-authenticate: basic' in head:
+ raise SystemExit('Finance login route intercepted by outer Basic protection')
+print('Finance HTTPS page Basic PASS; gateway anonymous session PASS; gateway login routing PASS')
 PY
 tar -xzf "$UI_TAR" -C "$SITE" --no-same-owner
 test "$(cat "$SITE/revision.txt")" = "$SHA"
