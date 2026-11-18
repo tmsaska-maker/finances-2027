@@ -32,7 +32,13 @@ echo "Finance-only preflight PASS (schema versions present, no screening operati
 if [[ "$ACTION" == preflight ]]; then exit 0; fi
 [[ -d "$STAGE" ]] || { echo "Staged directory missing" >&2; exit 1; }
 # Refuse inconsistent migration/table combinations before applying changes.
-schema_state="$("${DC[@]}" exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -v ON_ERROR_STOP=1 -Atq -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT (to_regclass('"'public.monthly_forecast_lines'"') IS NOT NULL)::int || chr(44) || (to_regclass('"'public.monthly_forecast_revisions'"') IS NOT NULL)::int"' | tr -d '\r')"
+schema_state="$("${DC[@]}" exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -qAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+BEGIN READ ONLY;
+SELECT (to_regclass('public.monthly_forecast_lines') IS NOT NULL)::int
+       || ',' || (to_regclass('public.monthly_forecast_revisions') IS NOT NULL)::int;
+COMMIT;
+SQL
+)"
 case "$version:$schema_state" in
   1,2,3,4,5,6:0,0|1,2,3,4,5,6,7:1,0|1,2,3,4,5,6,7,8:1,1) ;;
   *) echo "Unexpected forecast migration state; abort" >&2; exit 1 ;;
