@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import {loadFinanceCategories,type FinanceCategory} from "./domain/finance-categories";
-import {loadMonthlyForecast,previewMonthlyForecast,confirmMonthlyForecast,createMonthlyLine,parseForecastMoney,minorMoney,adjacentMonths,type MonthlyLine,type MonthlyPreview} from "./domain/monthly-forecast-api";
+import {loadMonthlyForecast,previewMonthlyForecast,confirmMonthlyForecast,createMonthlyLine,parseForecastMoney,minorMoney,adjacentMonths,reviseMonthlyForecast,loadMonthlyForecastHistory,type ForecastRevision,type MonthlyLine,type MonthlyPreview} from "./domain/monthly-forecast-api";
 
 type Project="Усі напрями"|"Амбулаторія"|"Скринінг"|"Психотерапія";
 const projectIds={"Амбулаторія":"ambulatory","Скринінг":"screening","Психотерапія":"psychotherapy"} as const;
@@ -29,6 +29,10 @@ export default function PrivateMonthlyPlanning({project,setProject,notify}:{
  const [day,setDay]=useState("05");
  const [category,setCategory]=useState("");
  const [kind,setKind]=useState<"fixed"|"estimated">("estimated");
+ const [editing,setEditing]=useState<string|null>(null);
+ const [revisedAmount,setRevisedAmount]=useState("");
+ const [revisedDate,setRevisedDate]=useState("");
+ const [revisions,setRevisions]=useState<{id:string;rows:ForecastRevision[]}|null>(null);
  const activeProject=project==="Усі напрями"?"Амбулаторія":project;
  const activeId=projectIds[activeProject];
  const options=catalog[activeId]||[];
@@ -80,6 +84,25 @@ export default function PrivateMonthlyPlanning({project,setProject,notify}:{
    });
    setSeed(false);setName("");setAmount("");notify("Повторювану основу збережено в "+sourceMonth);
   }catch(e){fail(e)}finally{setBusy(false)}
+ };
+ const editLine=(r:MonthlyLine)=>{
+  setEditing(r.id);setRevisedAmount(minorMoney(r.amountMinor));setRevisedDate(r.dueDate);setError("");
+ };
+ const saveRevision=async(r:MonthlyLine)=>{
+  setBusy(true);setError("");
+  try{
+   const amountMinor=parseForecastMoney(revisedAmount);
+   const result=await reviseMonthlyForecast(r,amountMinor,revisedDate);
+   if(!result.record)throw Error("Не отримано оновлений прогноз");
+   const updated=await loadMonthlyForecast(targetMonth);
+   setRecords(updated.records);setEditing(null);setRevisions(null);
+   notify(result.changed?"Прогноз оновлено, попередня сума збережена в історії":"Сума й дата не змінилися");
+  }catch(e){fail(e)}finally{setBusy(false)}
+ };
+ const showHistory=async(id:string)=>{
+  setBusy(true);setError("");
+  try{const h=await loadMonthlyForecastHistory(id);setRevisions({id,rows:h.records});}
+  catch(e){fail(e)}finally{setBusy(false)}
  };
  const candidates=visible(preview?.proposed||[]);
  const existing=visible(records);
@@ -169,8 +192,31 @@ export default function PrivateMonthlyPlanning({project,setProject,notify}:{
       <span>Дата</span><span>Сума, ₴</span><span>Тип</span><span/></div>
     {existing.map(r=><div className="tr" key={r.id}><span/><span><strong>{r.title}</strong>
       <small>{r.project}</small></span><span>{label(r)}</span><span>{r.dueDate.split("-").reverse().join(".")}</span>
-      <span>{fmt(r.amountMinor)}</span><span><em className="quiet-badge neutral">Прогноз</em></span><span/></div>)}
+      <span>{fmt(r.amountMinor)}</span><span><em className="quiet-badge neutral">Прогноз</em></span>
+      <span><button type="button" aria-label={"Редагувати "+r.title} onClick={()=>editLine(r)} disabled={busy}>✎</button></span>
+     </div>)}
     {existing.length===0&&<div className="expenses-empty">Немає збережених прогнозних рядків у цьому місяці.</div>}
+    {editing&&existing.some(r=>r.id===editing)&&<form className="table-card" style={{padding:18}} onSubmit={e=>{
+      e.preventDefault();const current=records.find(x=>x.id===editing);if(current)void saveRevision(current);
+     }}>
+      <h3>Уточнити прогноз: {records.find(x=>x.id===editing)?.title}</h3>
+      <div className="expense-form-grid">
+       <label>Нова прогнозна сума, грн<input aria-label="Нова прогнозна сума" required value={revisedAmount} onChange={e=>setRevisedAmount(e.target.value)} inputMode="decimal"/></label>
+       <label>Дата очікуваної оплати<input aria-label="Нова дата оплати" type="date" required value={revisedDate} onChange={e=>setRevisedDate(e.target.value)}/></label>
+      </div>
+      <div className="expense-modal-actions">
+       <button type="button" className="secondary" disabled={busy} onClick={()=>{setEditing(null);setRevisions(null)}}>Скасувати</button>
+       <button type="button" className="secondary" disabled={busy} onClick={()=>void showHistory(editing)}>Історія змін</button>
+       <button type="submit" className="primary" disabled={busy}>Зберегти прогноз</button>
+      </div>
+      {revisions?.id===editing&&<div role="status">
+       <strong>Історія змін</strong>
+       {revisions.rows.length===0?<p>Змін поки не було.</p>:revisions.rows.map(v=>
+        <p key={v.id}>{new Date(v.revisedAt).toLocaleString("uk-UA")}: {fmt(v.oldAmountMinor)} → {fmt(v.newAmountMinor)}; дата {v.oldDueDate} → {v.newDueDate}</p>
+       )}
+      </div>}
+     </form>}
+
    </div></section>
  </>;
 }
