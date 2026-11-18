@@ -30,6 +30,30 @@ SELECT 'data_rows|payments|' || count(*) FROM payments;
 SELECT 'data_by_project|accounts|' || project || '|' || count(*) FROM accounts GROUP BY project ORDER BY project;
 SELECT 'data_by_project|transactions|' || project || '|' || count(*) FROM transactions GROUP BY project ORDER BY project;
 SELECT 'data_by_project|obligations|' || project || '|' || count(*) FROM obligations GROUP BY project ORDER BY project;
+-- Preflight for migrations 007 and 008: metadata only; no writes and no finance amounts.
+SELECT 'forecast_007_migration_recorded|' || EXISTS (SELECT 1 FROM schema_migrations WHERE version=7);
+SELECT 'forecast_008_migration_recorded|' || EXISTS (SELECT 1 FROM schema_migrations WHERE version=8);
+SELECT 'forecast_lines_table_present|' || (to_regclass('public.monthly_forecast_lines') IS NOT NULL);
+SELECT 'forecast_revisions_table_present|' || (to_regclass('public.monthly_forecast_revisions') IS NOT NULL);
+SELECT 'forecast_lines_required_columns|' ||
+  (SELECT count(*) FROM information_schema.columns
+   WHERE table_schema='public' AND table_name='monthly_forecast_lines'
+     AND column_name IN ('id','month','project','category_id','title','currency',
+       'amount_minor','due_date','source_template_id','recurring','amount_kind','status','created_at'));
+SELECT 'forecast_revisions_required_columns|' ||
+  (SELECT count(*) FROM information_schema.columns
+   WHERE table_schema='public' AND table_name='monthly_forecast_revisions'
+     AND column_name IN ('id','forecast_line_id','old_amount_minor','new_amount_minor',
+       'old_due_date','new_due_date','revised_at'));
+SELECT 'forecast_lines_unique_month_project_template|' || EXISTS (
+  SELECT 1 FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+  WHERE t.oid=to_regclass('public.monthly_forecast_lines')
+    AND c.contype='u' AND pg_get_constraintdef(c.oid) LIKE '%month, project, source_template_id%'
+);
+SELECT 'forecast_revisions_foreign_key|' || EXISTS (
+  SELECT 1 FROM pg_constraint c
+  WHERE c.conrelid=to_regclass('public.monthly_forecast_revisions') AND c.contype='f'
+);
 COMMIT;
 SQL
 echo "FINANCE_LIVE_AUDIT_END"
