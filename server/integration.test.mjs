@@ -104,6 +104,12 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
 
 
 
+    const monthlyMigration=readFileSync(new URL('./sql/007_monthly_forecast.sql',import.meta.url),'utf8');
+    await pool.query(monthlyMigration);
+    await pool.query(monthlyMigration); // safe to repeat; existing data left untouched
+    assert.equal((await pool.query("SELECT COUNT(*)::int AS n FROM monthly_forecast_lines")).rows[0].n,0);
+    assert.deepEqual((await pool.query("SELECT version FROM schema_migrations WHERE version=7")).rows.map(x=>x.version),[7]);
+
     server = makeServer(pool, TOKEN);
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const base = 'http://127.0.0.1:' + server.address().port;
@@ -139,6 +145,35 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     assert.ok(screeningCategories.body.records.some(v=>v.id==='payroll'));
     assert.ok(!screeningCategories.body.records.some(v=>v.id==='per_food'));
 
+
+    // F03: REAL PostgreSQL recurring forecast API. No BUDGET snapshot or bank ACTUAL is changed.
+    const draft={
+      month:'2026-11',project:'ambulatory',categoryId:'amb_utilities',title:'Тестова електрика',
+      currency:'UAH',amountMinor:250000,dueDate:'2026-11-30',sourceTemplateId:'electricity',
+      recurring:true,amountKind:'estimated'
+    };
+    assert.equal((await send('/forecast/monthly/lines',draft)).status,201);
+    assert.equal((await send('/forecast/monthly/lines',draft)).status,409);
+    assert.equal((await send('/forecast/monthly/lines',{...draft,amountMinor:0,sourceTemplateId:'bad'})).status,400);
+    assert.equal((await send('/forecast/monthly/lines',{...draft,project:'screening',sourceTemplateId:'wrong-project'})).status,400);
+    assert.equal((await send('/forecast/monthly?month=2026-11',undefined,'GET')).body.records.length,1);
+    assert.equal((await fetch(base+'/forecast/monthly?month=2026-11')).status,401);
+    const prev=await send('/forecast/monthly/preview',{sourceMonth:'2026-11',targetMonth:'2026-12'});
+    assert.equal(prev.status,201);
+    assert.equal(prev.body.proposed.length,1);
+    const selectedId=prev.body.proposed[0].id;
+    const batch={sourceMonth:'2026-11',targetMonth:'2026-12',selectedIds:[selectedId],
+      edits:{[selectedId]:{amountMinor:273000,dueDate:'2026-12-24'}}};
+    const applied=await send('/forecast/monthly/confirm',batch);
+    assert.equal(applied.status,201);
+    assert.equal(applied.body.inserted,1);
+    assert.equal(applied.body.records[0].amountMinor,273000);
+    assert.equal(applied.body.records[0].dueDate,'2026-12-24');
+    assert.equal((await send('/forecast/monthly/confirm',batch)).body.inserted,0);
+    assert.equal((await send('/forecast/monthly?month=2026-12',undefined,'GET')).body.records.length,1);
+    assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM obligations')).rows[0].n,0);
+    assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM transactions')).rows[0].n,0);
+    assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM payments')).rows[0].n,0);
 
     const account = { id: 'account-1', label: 'Test account', project: 'ambulatory', currency: 'UAH' };
     assert.equal((await send('/accounts', account)).status, 201);
