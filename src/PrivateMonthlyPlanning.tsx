@@ -87,10 +87,6 @@ export default function PrivateMonthlyPlanning({project,setProject,notify}:{
  const sum=chosen.reduce((n,x)=>n+(Number((amounts[x.id]||"0").replace(",","."))||0)*100,0);
  const label=(x:MonthlyLine)=>catalog[x.project as ProjectId]?.find(c=>c.id===x.categoryId)?.name||x.categoryId;
  return <>
-  <div className="project-switcher">
-   {(["Усі напрями","Амбулаторія","Скринінг","Психотерапія"] as Project[]).map(p=>
-    <button key={p} className={project===p?"active":""} onClick={()=>setProject(p)}>{p}</button>)}
-  </div>
   <div className="page-heading">
    <div><div className="eyebrow">Планування · {project} · {targetMonth}</div>
     <h1>Створити платіжний план</h1>
