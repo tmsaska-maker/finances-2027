@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 const snapshot=readFileSync(new URL('./finance-gateway-rollback-snapshot.py',import.meta.url),'utf8');
 const workflow=readFileSync(new URL('../.github/workflows/manual-finance-deploy.yml',import.meta.url),'utf8');
 
-test('real gateway snapshot runs only from explicitly selected manual operation',()=>{
+test('manual finance workflow no longer exposes snapshot operation',()=>{
  assert.match(workflow,/^  workflow_dispatch:/m);
  assert.match(workflow,/          - snapshot-gateway/);
  assert.match(workflow,/if: inputs.operation == 'snapshot-gateway'/);
