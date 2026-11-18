@@ -31,6 +31,11 @@ test('single finance DB deploy applies 007/008 and never performs backup, restor
  assert.doesNotMatch(script,/docker\s+compose\s+down/);
  execFileSync('bash',['-n',new URL('./manual-finance-release.sh',import.meta.url).pathname]);
 });
+test('finance API Docker image includes forecast runtime modules',()=>{
+ const docker=readFileSync(new URL('../server/Dockerfile',import.meta.url),'utf8');
+ assert.match(docker,/COPY main\\.mjs http\\.mjs repository\\.mjs validation\\.mjs monthly-planning\\.mjs monthly-forecast-repository\\.mjs/);
+ assert.doesNotMatch(docker,/COPY\\s+\\.\\s+\\./);
+});
 test('existing finance stack is reused; no gateway/Caddy/Screening40 writes in release',()=>{
  assert.match(script,/docker compose --env-file "\$APP\/\.env" -f "\$APP\/compose\.yaml" -f "\$override" up -d --no-build --no-deps api/);
  assert.doesNotMatch(script,/docker\s+(?:volume\s+create|run|compose\s+down)|systemctl|caddy\s+reload|postgres\s+-D/);
