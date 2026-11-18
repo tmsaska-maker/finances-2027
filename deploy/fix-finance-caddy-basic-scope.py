@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-"""Finance-only Caddy Basic scope fix. Run on the existing Lightsail host.
-
-Public finance UI stays behind Caddy Basic auth. Only /finance-api/* bypasses
-that outer prompt; every real finance endpoint is protected by the existing
-cookie-session gateway on localhost:8092. Never change Screening40 routes.
+"""One password for finance: remove outer Basic only on the finance host and
+preserve /finance-api paths on the owner-session gateway. Never edit Screening40.
 """
 import argparse
 import json
@@ -40,50 +37,43 @@ def site_bounds(text):
 
 def scoped_config(original):
     opening, closing = site_bounds(original)
-    block = original[opening + 1 : closing]
+    block = original[opening + 1:closing]
     if "/opt/finances-2027/site" not in block:
         raise ValueError("Unexpected finance static root")
-    if "/finance-api/*" not in block or "127.0.0.1:8092" not in block:
-        raise ValueError("Expected existing finance API reverse proxy to 8092")
-    if MATCHER in block:
-        raise ValueError("Finance Basic matcher already exists; no mutation necessary")
     lines = block.splitlines(keepends=True)
     depth = 1
-    found = []
+    auth_start = auth_end = auth_depth = None
+    route_index = None
+    proxy_found = False
     for index, line in enumerate(lines):
-        # Only support a top-level Basic-auth block. Never rewrite imported snippets
-        # or auth blocks inside a nested route.
-        match = BASIC_RE.match(line.rstrip("\r\n"))
-        if match and depth == 1:
-            arguments = (match.group(3) or "").strip().split()
-            if arguments and (arguments[0].startswith(("@", "/")) or arguments[0] == "*"):
-                raise ValueError("Existing Basic authentication has a matcher; refusing guess")
-            found.append((index, match))
-        no_comment = line.partition("#")[0]
-        depth += no_comment.count("{") - no_comment.count("}")
-    if len(found) != 1:
-        raise ValueError("Expected exactly one direct Basic auth block in finance site; refusing guess")
-    index, match = found[0]
-    indent, keyword = match.group(1), match.group(2)
-    args = match.group(3) or ""
-    suffix = match.group(4)
-    original_line = lines[index]
-    newline = "\r\n" if original_line.endswith("\r\n") else "\n"
-    matcher_block = (
-        indent + MATCHER + " {\n"
-        + indent + "    not path /finance-api/*\n"
-        + indent + "}\n"
+        code = line.partition("#")[0].strip()
+        parts = code.split()
+        if depth == 1 and parts and parts[0] in ("basic_auth", "basicauth"):
+            if auth_start is not None or not code.endswith("{"):
+                raise ValueError("Unexpected finance Basic auth layout")
+            auth_start, auth_depth = index, depth
+        if depth == 1 and parts and parts[0] in ("handle_path", "handle") and "/finance-api/*" in parts:
+            if route_index is not None:
+                raise ValueError("Multiple finance API routes")
+            if parts[:2] != ["handle_path", "/finance-api/*"] or not code.endswith("{"):
+                raise ValueError("Expected handle_path /finance-api/*")
+            route_index = index
+        if route_index is not None and depth >= 2 and parts and parts[0] == "reverse_proxy" and "127.0.0.1:8092" in parts:
+            proxy_found = True
+        depth += code.count("{") - code.count("}")
+        if auth_start is not None and auth_end is None and depth == auth_depth:
+            auth_end = index + 1
+    if depth != 1 or auth_start is None or auth_end is None:
+        raise ValueError("Expected one complete finance Basic auth block")
+    if route_index is None or not proxy_found:
+        raise ValueError("Expected existing finance gateway path/proxy")
+    if auth_start <= route_index < auth_end:
+        raise ValueError("Finance API route nested in Basic auth")
+    lines[route_index] = lines[route_index].replace(
+        "handle_path /finance-api/*", "handle /finance-api/*", 1
     )
-    lines[index] = (
-        matcher_block + indent + keyword + " " + MATCHER
-        + args + suffix + newline
-    )
-    candidate = original[:opening + 1] + "".join(lines) + original[closing:]
-    if candidate[:opening + 1] != original[:opening + 1]:
-        raise ValueError("Prefix outside finance block changed")
-    if candidate.endswith(original[closing:]) is False:
-        raise ValueError("Suffix outside finance block changed")
-    return candidate
+    del lines[auth_start:auth_end]
+    return original[:opening + 1] + "".join(lines) + original[closing:]
 
 
 def run(command, timeout=12):
@@ -117,33 +107,29 @@ def curl(path, method="GET", headers=(), data=None):
 
 
 def verify_live():
-    # Page remains gated by the ORIGINAL outer Caddy Basic credentials.
+    # The login page is public; personal finance records remain locked behind
+    # the existing owner-session gateway. Never send real passwords in probes.
     code, head, _ = curl("/")
-    if code != 401 or 'www-authenticate: basic realm="restricted"' not in head:
-        raise ValueError("Static finance UI is no longer protected by Caddy Basic auth")
-    # API anonymous session is *designed* to be reachable without Basic auth,
-    # but it cannot return financial data without its separate owner session.
+    if code != 200 or "www-authenticate: basic" in head:
+        raise ValueError("Finance login page was not accessible without Caddy Basic")
     code, head, body = curl("/finance-api/session")
     try:
         session = json.loads(body)
     except ValueError as error:
-        raise ValueError("Finance gateway did not return valid JSON") from error
-    if code != 200 or session != {"authenticated": False}:
-        raise ValueError("Finance anonymous session route did not reach gateway")
-    # Malformed login payload validates the POST route, without guessing or
-    # consuming password attempts. No Basic auth challenge should occur here.
-    code, head, body = curl(
-        "/finance-api/login",
-        method="POST",
-        headers=(
-            ("Origin", "https://" + FINANCE_HOST),
-            ("Content-Type", "application/json"),
-        ),
-        data="{",
+        raise ValueError("Finance browser session returned no JSON") from error
+    if code != 200 or session != {"authenticated": False} or "www-authenticate: basic" in head:
+        raise ValueError("Finance API session did not reach owner gateway")
+    code, head, _ = curl("/finance-api/obligations")
+    if code != 401 or "www-authenticate: basic" in head:
+        raise ValueError("Finance records were not protected by owner session")
+    code, head, _ = curl(
+        "/finance-api/login", method="POST",
+        headers=(("Origin", "https://" + FINANCE_HOST),
+                 ("Content-Type", "application/json")), data="{"
     )
     if code != 400 or "www-authenticate: basic" in head:
-        raise ValueError("Finance login POST did not reach private gateway")
-    print("Finance routing PASS: static Basic 401, gateway session 200, gateway login 400")
+        raise ValueError("Finance login POST did not reach owner gateway")
+    print("FINANCE_SINGLE_PASSWORD_PASS: page 200, session 200, records 401, login 400")
 
 
 def apply(original, candidate):
@@ -180,7 +166,7 @@ def apply(original, candidate):
             if rollback.returncode:
                 raise ValueError("Finance probe failed AND original Caddy reload failed")
             raise
-    print("Finance Caddy routing updated in place; other sites unchanged")
+    print("FINANCE_SINGLE_PASSWORD_APPLIED: finance host only; other sites unchanged")
 
 
 def main():
@@ -205,7 +191,7 @@ def main():
                 result = run(["caddy", "validate", "--config", str(file), "--adapter", "caddyfile"])
                 if result.returncode:
                     raise ValueError("Finance-only Caddy candidate is not valid")
-                print("Finance-only Caddy candidate PASS, no server changes")
+                print("FINANCE_SINGLE_PASSWORD_CHECK_PASS, no server changes")
             return 0
         apply(original, changed)
         return 0
