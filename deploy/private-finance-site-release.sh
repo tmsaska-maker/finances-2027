@@ -128,29 +128,23 @@ fi
 # HTTPS probe must receive 401 + the exact known Basic challenge, not 200.
 # The inner gateway was independently verified above using 127.0.0.1:8092.
 python3 - <<'PY'
-import re,subprocess
+import subprocess
 host='finances.screening40.com.ua'
-p=subprocess.run(['curl','--silent','--show-error','--max-time','8',
+p=subprocess.run([
+ 'curl','--silent','--show-error','--max-time','8',
  '--resolve',host+':443:127.0.0.1',
  '--dump-header','-','--output','/dev/null',
- 'https://'+host+'/finance-api/session'],
- capture_output=True,text=True,timeout=12)
+ 'https://'+host+'/finance-api/session'
+],capture_output=True,text=True,timeout=12)
 if p.returncode!=0:
- raise SystemExit('Finance HTTPS transport failed (Caddy access was not confirmed)')
-headers=p.stdout.replace('\r\n','\n')
-responses=re.findall(r'(?im)^HTTP/(?:1(?:\.0|\.1)?|2|3)\s+(\d{3})\s*
-tar -xzf "$UI_TAR" -C "$SITE" --no-same-owner
-test "$(cat "$SITE/revision.txt")" = "$SHA"
-echo 'PRIVATE_FINANCE_SITE_DEPLOY_PASS: existing site, gateway and finance DB only; no backup.'
-,headers)
-if not responses or responses[-1]!='401':
- raise SystemExit('Expected existing finance HTTPS Basic authentication challenge (401)')
-if not re.search(r'(?im)^www-authenticate:\s*Basic\s+realm="restricted"\s*
-tar -xzf "$UI_TAR" -C "$SITE" --no-same-owner
-test "$(cat "$SITE/revision.txt")" = "$SHA"
-echo 'PRIVATE_FINANCE_SITE_DEPLOY_PASS: existing site, gateway and finance DB only; no backup.'
-,headers):
- raise SystemExit('Expected existing finance Caddy Basic authentication realm')
+ raise SystemExit('Finance HTTPS transport failed')
+lines=p.stdout.splitlines()
+statuses=[line.split() for line in lines if line.startswith('HTTP/')]
+if not statuses or len(statuses[-1])<2 or statuses[-1][1]!='401':
+ raise SystemExit('Expected Caddy outer Basic 401 challenge')
+challenges=[line.partition(':')[2].strip() for line in lines if line.lower().startswith('www-authenticate:')]
+if not any(value=='Basic realm="restricted"' for value in challenges):
+ raise SystemExit('Expected Caddy outer Basic realm restricted')
 print('Finance HTTPS outer Basic protection PASS; inner gateway session PASS')
 PY
 tar -xzf "$UI_TAR" -C "$SITE" --no-same-owner
