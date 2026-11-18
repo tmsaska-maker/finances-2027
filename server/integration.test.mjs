@@ -110,6 +110,11 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     assert.equal((await pool.query("SELECT COUNT(*)::int AS n FROM monthly_forecast_lines")).rows[0].n,0);
     assert.deepEqual((await pool.query("SELECT version FROM schema_migrations WHERE version=7")).rows.map(x=>x.version),[7]);
 
+    const auditMigration=readFileSync(new URL('./sql/008_forecast_revision_audit.sql',import.meta.url),'utf8');
+    await pool.query(auditMigration);
+    await pool.query(auditMigration);
+    assert.deepEqual((await pool.query("SELECT version FROM schema_migrations WHERE version=8")).rows.map(x=>x.version),[8]);
+
     server = makeServer(pool, TOKEN);
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const base = 'http://127.0.0.1:' + server.address().port;
@@ -171,6 +176,40 @@ test('isolated PostgreSQL: migration, HTTP API and bank-backed partial settlemen
     assert.equal(applied.body.records[0].dueDate,'2026-12-24');
     assert.equal((await send('/forecast/monthly/confirm',batch)).body.inserted,0);
     assert.equal((await send('/forecast/monthly?month=2026-12',undefined,'GET')).body.records.length,1);
+
+    const revised=await send('/forecast/monthly/revise',{
+      id:selectedId,month:'2026-12',expectedAmountMinor:273000,expectedDueDate:'2026-12-24',
+      amountMinor:287500,dueDate:'2026-12-27'
+    });
+    assert.equal(revised.status,201);
+    assert.equal(revised.body.changed,true);
+    assert.equal(revised.body.record.amountMinor,287500);
+    assert.equal((await send('/forecast/monthly/revise',{
+      id:selectedId,month:'2026-12',expectedAmountMinor:273000,expectedDueDate:'2026-12-24',
+      amountMinor:300000,dueDate:'2026-12-28'
+    })).status,409); // stale UI must not overwrite newer forecast
+    assert.equal((await send('/forecast/monthly/revise',{
+      id:selectedId,month:'2026-12',expectedAmountMinor:287500,expectedDueDate:'2026-12-27',
+      amountMinor:0,dueDate:'2026-12-28'
+    })).status,400);
+    assert.equal((await send('/forecast/monthly/revise',{
+      id:selectedId,month:'2026-12',expectedAmountMinor:287500,expectedDueDate:'2026-12-27',
+      amountMinor:290000,dueDate:'2027-01-01'
+    })).status,400);
+    const history=await send('/forecast/monthly/history?id='+encodeURIComponent(selectedId),undefined,'GET');
+    assert.equal(history.status,200);
+    assert.equal(history.body.records.length,1);
+    assert.equal(history.body.records[0].oldAmountMinor,273000);
+    assert.equal(history.body.records[0].newAmountMinor,287500);
+    assert.equal(history.body.records[0].oldDueDate,'2026-12-24');
+    assert.equal(history.body.records[0].newDueDate,'2026-12-27');
+    assert.equal((await send('/forecast/monthly/revise',{
+      id:selectedId,month:'2026-12',expectedAmountMinor:287500,expectedDueDate:'2026-12-27',
+      amountMinor:287500,dueDate:'2026-12-27'
+    })).body.changed,false);
+    assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM monthly_forecast_revisions')).rows[0].n,1);
+    assert.equal((await pool.query('SELECT amount_minor::text AS a FROM monthly_forecast_lines WHERE id=$1',[selectedId])).rows[0].a,'287500');
+
     assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM obligations')).rows[0].n,0);
     assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM transactions')).rows[0].n,0);
     assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM payments')).rows[0].n,0);
