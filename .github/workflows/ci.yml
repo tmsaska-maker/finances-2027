@@ -27,7 +27,7 @@ jobs:
         run: npm run typecheck
       - name: Test private API validators and auth gate
         run: |
-          node --test server/validation.test.mjs server/http.test.mjs
+          node --test server/validation.test.mjs server/http.test.mjs server/monthly-planning.test.mjs
           timeout 45s node --test --test-reporter=spec server/browser-gateway.test.mjs
       - name: Verify finance-only deployment isolation
         run: node --test deploy/compose.test.mjs
