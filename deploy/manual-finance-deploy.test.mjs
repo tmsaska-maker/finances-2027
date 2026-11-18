@@ -196,3 +196,19 @@ test('T007 live finance topology and rollback prerequisites inspection is strict
  execFileSync('python3',['-c','import sys;compile(sys.stdin.read(),"<finance-topology>","exec")'],{input:body,encoding:'utf8'});
  execFileSync('bash',['-n',new URL('./finance-edge-readonly-inspect.sh',import.meta.url).pathname]);
 });
+
+
+
+test('private finance release keeps one existing website, gateway and DB',()=>{
+ const script=readFileSync(new URL('./private-finance-site-release.sh',import.meta.url),'utf8');
+ for(const token of ["          - private-ui","if: inputs.operation == 'private-ui'","VITE_FINANCES_PRIVATE_UI: 'true'","finances2027-private-ui-","finances2027-private-gateway-","private-finance-site-release.sh"]) {
+  assert.ok(wf.includes(token),'Missing private release workflow step: '+token);
+ }
+ for(const token of ['SITE="$ROOT/site"','FINANCES_GATEWAY_API_ORIGIN: http://api:8091','127.0.0.1:8092:8092','FINANCES_OWNER_PASSWORD_HASH','handle /finance-api/*','caddy validate','caddy reload','--no-build --no-deps gateway','PRIVATE_FINANCE_SITE_DEPLOY_PASS']) {
+  assert.ok(script.includes(token),'Missing private release safeguard: '+token);
+ }
+ for(const unsafe of ['pg_dump','pg_restore','createdb','dropdb','docker volume','aws s3','snapshot','backup-export','down -v','--remove-orphans']) {
+  assert.ok(!script.includes(unsafe),'Forbidden database/backup operation: '+unsafe);
+ }
+ execFileSync('bash',['-n',new URL('./private-finance-site-release.sh',import.meta.url).pathname]);
+});
