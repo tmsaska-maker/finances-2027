@@ -33,7 +33,7 @@ test('single finance DB deploy applies 007/008 and never performs backup, restor
 });
 test('finance API Docker image includes forecast runtime modules',()=>{
  const docker=readFileSync(new URL('../server/Dockerfile',import.meta.url),'utf8');
- assert.match(docker,/COPY main\\.mjs http\\.mjs repository\\.mjs validation\\.mjs monthly-planning\\.mjs monthly-forecast-repository\\.mjs/);
+ assert.ok(docker.includes("COPY main.mjs http.mjs repository.mjs validation.mjs monthly-planning.mjs monthly-forecast-repository.mjs"));
  assert.doesNotMatch(docker,/COPY\\s+\\.\\s+\\./);
 });
 test('existing finance stack is reused; no gateway/Caddy/Screening40 writes in release',()=>{
