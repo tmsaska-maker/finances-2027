@@ -99,12 +99,27 @@ caddy validate --config "$STAGE/Caddyfile.candidate" --adapter caddyfile >/dev/n
 docker load -i "$GATEWAY_TAR" >/dev/null
 docker image inspect "finances2027-gateway:$SHA" >/dev/null
 docker compose --env-file "$ENVFILE" -f "$BASE" -f "$OVERLAY" up -d --no-build --no-deps gateway
+# Docker "Started" is not an HTTP readiness signal. Allow bounded startup time.
+# Only check the existing finance gateway endpoint; never print response bodies or secrets.
 python3 - <<'PY'
-import json,urllib.request
-with urllib.request.urlopen('http://127.0.0.1:8092/finance-api/session',timeout=6) as r:
- if r.status!=200 or json.load(r)!={'authenticated':False}:raise SystemExit('Gateway smoke failed')
+import json,time,urllib.request,urllib.error
+endpoint='http://127.0.0.1:8092/finance-api/session'
+ready=False
+for attempt in range(20):
+ try:
+  with urllib.request.urlopen(endpoint,timeout=2) as response:
+   ready=response.status==200 and json.load(response)=={'authenticated':False}
+  if ready:break
+ except (OSError,TimeoutError,ValueError,urllib.error.HTTPError):
+  pass
+ time.sleep(1)
+if not ready:raise SystemExit('Finance gateway did not become HTTP-ready within startup window')
 print('Private finance gateway session PASS')
 PY
+if ! docker compose --env-file "$ENVFILE" -f "$BASE" -f "$OVERLAY" ps --status running --services | grep -Fxq gateway; then
+ echo 'Finance gateway is not running after readiness check; installation stopped safely'
+ exit 1
+fi
 if ! cmp -s /etc/caddy/Caddyfile "$STAGE/Caddyfile.candidate";then
  caddy reload --config "$STAGE/Caddyfile.candidate" --adapter caddyfile >/dev/null 2>&1 || { echo 'Finance route reload failed'; exit 1; }
  install -m 644 "$STAGE/Caddyfile.candidate" /etc/caddy/Caddyfile
