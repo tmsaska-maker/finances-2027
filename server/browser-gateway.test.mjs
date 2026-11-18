@@ -80,3 +80,39 @@ test('gateway blocks repeated wrong passwords',async()=>{
   assert.equal((await send()).status,429);
  }finally{await close(g);}
 });
+
+test('T015 monthly browser API uses owner session plus origin check and never exposes bearer token',async()=>{
+ const seen=[];let upstream,gate;
+ try{
+  upstream=(await import('node:http')).createServer(async(req,res)=>{
+   let raw='';for await(const part of req)raw+=part.toString();
+   seen.push({path:req.url,method:req.method,body:raw,auth:req.headers.authorization});
+   res.setHeader('content-type','application/json');
+   res.end(JSON.stringify(req.method==='POST'?{month:'2026-12',inserted:1,records:[]}:{month:'2026-12',records:[]}));
+  });
+  const apiOrigin=await listen(upstream);
+  gate=createFinanceBrowserGateway({publicOrigin,apiOrigin,apiToken:API_TOKEN,sessionSecret,passwordDigest:passwordHash(owner)});
+  const base=await listen(gate);
+  const path='/finance-api/forecast/monthly/confirm';
+  const body=JSON.stringify({sourceMonth:'2026-11',targetMonth:'2026-12',selectedIds:[],edits:{}});
+  const opts={method:'POST',headers:{origin:publicOrigin,'content-type':'application/json'},body};
+  assert.equal((await fetch(base+path,opts)).status,401);
+  const login=await fetch(base+'/finance-api/login',{method:'POST',headers:{origin:publicOrigin},body:JSON.stringify({password:owner})});
+  const cookie=login.headers.get('set-cookie');
+  assert.equal((await fetch(base+path,{...opts,headers:{...opts.headers,cookie,origin:'https://evil.example'}})).status,403);
+  assert.equal((await fetch(base+path,{...opts,headers:{cookie,'content-type':'application/json'}})).status,403);
+  assert.equal((await fetch(base+path,{...opts,headers:{cookie,origin:publicOrigin,'content-type':'text/plain'}})).status,415);
+  assert.equal((await fetch(base+'/finance-api/payments',{...opts,headers:{...opts.headers,cookie}})).status,405);
+  assert.equal((await fetch(base+path,{...opts,headers:{...opts.headers,cookie}})).status,201);
+  const list=await fetch(base+'/finance-api/forecast/monthly?month=2026-12',{headers:{cookie}});
+  assert.equal(list.status,200);
+  assert.equal((await list.json()).month,'2026-12');
+  assert.equal(seen.length,2);
+  assert.equal(seen[0].method,'POST');
+  assert.equal(seen[0].path,'/forecast/monthly/confirm');
+  assert.equal(seen[0].body,body);
+  assert.equal(seen[0].auth,'Bearer '+API_TOKEN);
+  assert.equal(seen[1].path,'/forecast/monthly?month=2026-12');
+  assert.equal((await fetch(base+'/finance-api/forecast/monthly?month=2026-99',{headers:{cookie}})).status,404);
+ }finally{if(gate)await close(gate);if(upstream)await close(upstream);}
+});
