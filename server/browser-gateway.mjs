@@ -91,7 +91,7 @@ export function createFinanceBrowserGateway({publicOrigin,apiOrigin='http://127.
     if(!parseSession(req.headers.cookie,sessionSecret,now(),active))return response(res,401,{error:'Unauthorized'});
     const forecastGet=req.method==='GET' && url.pathname==='/finance-api/forecast/monthly' &&
       [...url.searchParams.keys()].every(k=>k==='month') && url.searchParams.getAll('month').length===1 &&
-      /^\\d{4}-(0[1-9]|1[0-2])$/.test(url.searchParams.get('month'));
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(url.searchParams.get('month'));
     const forecastPost=req.method==='POST' && !url.search &&
       ['/finance-api/forecast/monthly/lines','/finance-api/forecast/monthly/preview','/finance-api/forecast/monthly/confirm'].includes(url.pathname);
     const allowed=(req.method==='GET' && url.pathname==='/finance-api/obligations'&&!url.search) ||
@@ -103,7 +103,7 @@ export function createFinanceBrowserGateway({publicOrigin,apiOrigin='http://127.
     let payload;
     if(forecastPost) {
       if(req.headers.origin!==origin.origin)return response(res,403,{error:'Origin required'});
-      if(!/^application\\/json(?:\\s*;|$)/i.test(req.headers['content-type']||''))
+      if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
         return response(res,415,{error:'JSON content type required'});
       const chunks=[];let size=0;
       for await(const chunk of req) {
