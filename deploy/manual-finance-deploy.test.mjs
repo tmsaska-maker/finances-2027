@@ -215,7 +215,7 @@ test('private finance release keeps one existing website, gateway and DB',()=>{
   assert.ok(!script.includes(unsafe),'Forbidden database/backup operation: '+unsafe);
  }
  const blocks=[...script.matchAll(/python3 - <<'PY'\n([\s\S]*?)\nPY/g)].map(match=>match[1]);
- assert.equal(blocks.length,4,'Expected four Python checks including HTTPS probe');
+ assert.equal(blocks.length,2,'Expected readiness and HTTPS inline Python blocks');
  for(const [index,code] of blocks.entries()){
   execFileSync('python3',['-c','import sys;compile(sys.stdin.read(), "inline-finance-"+sys.argv[1], "exec")',String(index)],{input:code,encoding:'utf8'});
  }
