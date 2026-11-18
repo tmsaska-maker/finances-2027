@@ -353,7 +353,7 @@ function FinanceDashboardApp({ privateLogout }: { privateLogout?: () => Promise<
                 : <ExpensesScreen project={direction} setProject={setDirection} navigate={navigate} notify={notify} privateMode={privateFinanceMode} />
               )}
               {screen === "planning" && (privateFinanceMode
-                ? <PrivateMonthlyPlanning notify={notify} project={direction} setProject={setDirection}/>
+                ? <><ProjectSwitcher project={direction} setProject={setDirection}/><PrivateMonthlyPlanning notify={notify} project={direction} setProject={setDirection}/></>
                 : <Planning notify={notify} project={direction} setProject={setDirection}/>
               )}
               {screen === "payroll" && <Payroll notify={notify} />}
