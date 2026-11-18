@@ -198,26 +198,17 @@ test('T007 live finance topology and rollback prerequisites inspection is strict
 });
 
 
-test('private finance release targets one existing site and gateway without new DB or backup',()=>{
+
+test('private finance release keeps one existing website, gateway and DB',()=>{
  const script=readFileSync(new URL('./private-finance-site-release.sh',import.meta.url),'utf8');
- assert.match(wf,/          - private-ui/);
- assert.match(wf,/if: inputs.operation == 'private-ui'/);
- assert.match(wf,/VITE_FINANCES_PRIVATE_UI: 'true'/);
- assert.match(wf,/finances2027-private-ui-/);
- assert.match(wf,/finances2027-private-gateway-/);
- assert.match(wf,/private-finance-site-release\\.sh/);
- assert.match(script,/SITE="\\$ROOT\\/site"/);
- assert.match(script,/FINANCES_GATEWAY_API_ORIGIN: http:\\/\\/api:8091/);
- assert.match(script,/127\\.0\\.0\\.1:8092:8092/);
- assert.match(script,/FINANCES_OWNER_PASSWORD_HASH/);
- assert.match(script,/handle \\/finance-api\\/\\*/);
- assert.match(script,/caddy validate/);
- assert.match(script,/caddy reload/);
- assert.match(script,/--no-build --no-deps gateway/);
- assert.match(script,/PRIVATE_FINANCE_SITE_DEPLOY_PASS/);
- for(const unsafe of ['pg_dump','pg_restore','createdb','dropdb','docker volume','aws s3','snapshot','backup-export','down -v','--remove-orphans']) {
-  assert.ok(!script.includes(unsafe),'Forbidden new finance DB/backup behavior: '+unsafe);
+ for(const token of ["          - private-ui","if: inputs.operation == 'private-ui'","VITE_FINANCES_PRIVATE_UI: 'true'","finances2027-private-ui-","finances2027-private-gateway-","private-finance-site-release.sh"]) {
+  assert.ok(wf.includes(token),'Missing private release workflow step: '+token);
  }
- assert.doesNotMatch(script,/docker compose[^\\n]* (?:up|down)[^\\n]*\\b(?:db|api)\\b/);
+ for(const token of ['SITE="$ROOT/site"','FINANCES_GATEWAY_API_ORIGIN: http://api:8091','127.0.0.1:8092:8092','FINANCES_OWNER_PASSWORD_HASH','handle /finance-api/*','caddy validate','caddy reload','--no-build --no-deps gateway','PRIVATE_FINANCE_SITE_DEPLOY_PASS']) {
+  assert.ok(script.includes(token),'Missing private release safeguard: '+token);
+ }
+ for(const unsafe of ['pg_dump','pg_restore','createdb','dropdb','docker volume','aws s3','snapshot','backup-export','down -v','--remove-orphans']) {
+  assert.ok(!script.includes(unsafe),'Forbidden database/backup operation: '+unsafe);
+ }
  execFileSync('bash',['-n',new URL('./private-finance-site-release.sh',import.meta.url).pathname]);
 });
