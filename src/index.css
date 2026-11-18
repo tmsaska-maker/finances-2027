@@ -772,3 +772,94 @@ h1 { font-size: 25px; letter-spacing: -.8px; margin: 0; font-weight: 650; line-h
 .finance-private-pending { padding:28px; display:grid; gap:16px; justify-items:start; max-width:660px; }
 .finance-private-pending h2 { margin:0; font-size:21px; }
 .finance-private-pending p { margin:0; color:#697874; line-height:1.6; }
+
+
+/* Private Finance: accessible compact text, without changing the original demo. */
+.finance-private-mode .sidebar .nav-list button,
+.finance-private-mode .sidebar .sidebar-bottom > button,
+.finance-private-mode .sidebar .space-switch button,
+.finance-private-mode .breadcrumbs,
+.finance-private-mode .profile strong,
+.finance-private-mode .profile small,
+.finance-private-mode .eyebrow,
+.finance-private-mode .page-heading p,
+.finance-private-mode .project-switcher strong,
+.finance-private-mode .project-switcher small,
+.finance-private-mode .template strong,
+.finance-private-mode .template p,
+.finance-private-mode .template small,
+.finance-private-mode .stepper span,
+.finance-private-mode .stepper span i,
+.finance-private-mode .expenses-notice,
+.finance-private-mode .expense-kpi > span,
+.finance-private-mode .expense-kpi > small,
+.finance-private-mode .expense-filters input,
+.finance-private-mode .expense-filters select,
+.finance-private-mode .expense-table,
+.finance-private-mode .expense-table th,
+.finance-private-mode .expense-table td small,
+.finance-private-mode .expense-link,
+.finance-private-mode .expense-status,
+.finance-private-mode .expenses-empty,
+.finance-private-mode .expense-footnote,
+.finance-private-mode .plan-summary span,
+.finance-private-mode .plan-summary .summary-note,
+.finance-private-mode .data-table,
+.finance-private-mode .data-table .th,
+.finance-private-mode .table-tools,
+.finance-private-mode .table-tools > div > p,
+.finance-private-mode .tabs button,
+.finance-private-mode .quiet-badge,
+.finance-private-mode .footer-actions,
+.finance-private-mode .finance-budget-first p,
+.finance-private-mode .finance-budget-first small {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.finance-private-mode .project-switcher > button {
+  min-height: 46px;
+}
+.finance-private-mode .template {
+  min-height: 170px;
+  padding: 21px;
+}
+.finance-private-mode .template-grid {
+  max-width: none;
+  gap: 16px;
+  margin: 0 0 24px;
+}
+.finance-private-mode .plan-summary {
+  margin: 0 0 18px;
+}
+.finance-private-mode .plan-summary > div {
+  padding: 16px 19px;
+}
+.finance-private-mode .template-grid + .plan-summary {
+  margin-top: 2px;
+}
+.finance-private-mode .template-grid + .table-card,
+.finance-private-mode .plan-summary + .table-card,
+.finance-private-mode .template-grid + .expenses-notice,
+.finance-private-mode .table-card + .table-card {
+  margin-top: 18px;
+}
+.finance-private-mode .expenses-notice { padding: 13px 16px; margin-bottom: 19px; }
+.finance-private-mode .stepper { max-width: 690px; margin-bottom: 26px; }
+.finance-private-mode .stepper span i { width: 28px; height: 28px; }
+.finance-private-mode .expense-kpi { gap: 9px; }
+.finance-private-mode .expense-table td small { margin-top: 6px; }
+.finance-private-mode .finance-budget-first {
+  padding: 20px 22px;
+  margin: 0 0 22px;
+  border: 1px solid #c9dcd6;
+  background: #f2f8f5;
+  border-radius: 12px;
+}
+.finance-private-mode .finance-budget-first h2 { font-size: 19px; margin: 0 0 8px; }
+.finance-private-mode .finance-budget-first p { margin: 0 0 10px; color: #445f56; }
+.finance-private-mode .finance-budget-first ol { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 7px; font-size: 13px; line-height: 1.55; }
+.finance-private-mode .finance-budget-first strong { color: #20473d; }
+@media (max-width: 760px) {
+  .finance-private-mode .template-grid { gap: 14px; }
+  .finance-private-mode .template { min-height: 128px; }
+}
