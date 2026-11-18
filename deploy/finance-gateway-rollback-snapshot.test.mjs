@@ -7,9 +7,9 @@ const workflow=readFileSync(new URL('../.github/workflows/manual-finance-deploy.
 
 test('manual finance workflow no longer exposes snapshot operation',()=>{
  assert.match(workflow,/^  workflow_dispatch:/m);
- assert.match(workflow,/          - snapshot-gateway/);
- assert.match(workflow,/if: inputs.operation == 'snapshot-gateway'/);
- assert.match(workflow,/finance-gateway-rollback-snapshot\.py/);
+ assert.doesNotMatch(workflow,/          - snapshot-gateway/);
+ assert.doesNotMatch(workflow,/if: inputs.operation == 'snapshot-gateway'/);
+ assert.doesNotMatch(workflow,/finance-gateway-rollback-snapshot\.py/);
  assert.match(workflow,/github.ref == 'refs\/heads\/main'/);
  assert.match(workflow,/concurrency:/);
  assert.doesNotMatch(workflow,/^  push:|^  schedule:/m);
