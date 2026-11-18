@@ -1,27 +1,17 @@
-# Виправлення входу у фінансовий кабінет
+# Один пароль для «Фінанси 2027»
 
-Спостереження 18.11.2026: `POST /finance-api/login` повертає `HTTP 401` з `WWW-Authenticate: Basic realm="restricted"`. Отже, зовнішній Caddy Basic auth перехоплює вхід ще до окремого finance gateway. Браузер може повторно показувати старий пароль. Пароль власниці в gateway не змінювати.
+18.11.2026: підтверджено, що `POST /finance-api/login` отримував зовнішній `401 WWW-Authenticate: Basic realm="restricted"` від Caddy. Додатково `handle_path /finance-api/*` обрізав шлях, тоді як фінансовий gateway очікує повний `/finance-api/login`.
 
-**Без GitHub Actions.** На наявному сервері Lightsail через SSH завантажити фінансовий (тільки finance-host) інструмент:
+**Погоджене спрощення:** залишаємо тільки пароль власниці у приватному кабінеті, без зовнішнього Caddy Basic для фінансового сайту. Початкова сторінка входу доступна публічно, але фінансові записи, прогноз і всі захищені API-маршрути вимагають cookie-session авторизацію шлюзу. Токен API залишається на сервері. Жодних змін у Screening40, фінансовій БД або docker-сервісах.
+
+Через SSH на існуючому Lightsail:
 
 ```bash
 curl -fsSLo /tmp/fix-finance-caddy-basic-scope.py https://raw.githubusercontent.com/tmsaska-maker/finances-2027/main/deploy/fix-finance-caddy-basic-scope.py
 python3 -m py_compile /tmp/fix-finance-caddy-basic-scope.py
-sudo python3 /tmp/fix-finance-caddy-basic-scope.py --check
+sudo python3 /tmp/fix-finance-caddy-basic-scope.py --check && sudo python3 /tmp/fix-finance-caddy-basic-scope.py --apply
 ```
 
-`--check` лише читає існуючий Caddyfile, вимагає один finance-host, існуючий reverse proxy 8092 та один прямий `basic_auth` без matcher, готує кандидат в тимчасовій директорії й виконує `caddy validate`. При невідомому форматі припиняє роботу, нічого не змінюючи. Не показувати вміст `/etc/caddy/Caddyfile` (містить хеші).
+`--check` лише валідовує кандидат Caddy. `--apply` змінює **тільки фінансовий блок**: прибирає `basic_auth` і замінює `handle_path /finance-api/*` на `handle /finance-api/*`, лишаючи повний шлях до шлюзу 8092. Перед збереженням перевіряє: сторінка `200`, session `200 {"authenticated":false}`, анонімний доступ до записів `401` від шлюзу, некоректний login POST `400`. Якщо перевірки не проходять, намагається перезавантажити початкову конфігурацію й не записує кандидат. Не друкує конфігурацію або секрети.
 
-Якщо `--check` повернув `Finance-only Caddy candidate PASS, no server changes`, виконати:
-
-```bash
-sudo python3 /tmp/fix-finance-caddy-basic-scope.py --apply
-```
-
-Зміна тільки фінансового Caddy host: старий Basic захищає сторінки сайту, але не блокує `/finance-api/*`, для якого діє cookie-session Finance gateway. Автоматичні перевірки: неавторизований сайт залишається `401 Basic`, а `/finance-api/session` відповідає `200 {"authenticated":false}`; некоректний POST login відповідає `400` шлюзу. Якщо перевірки провалилися, активна конфігурація Caddy перезавантажується зі старого Caddyfile; диск не оновлюється. Не створює БД, backup, snapshot, сайту чи контейнера; Screening40 блоки залишаються байт-в-байт незмінними.
-
-Після успіху оновити сторінку у браузері і ввести пароль власниці в приватному інтерфейсі. Пароль в GitHub/chat не надсилати.
-
-Для подальших `private-ui` релізів оновлено smoke: перевіряються `401` на сторінці і `200`/ `400` на finance API.
-
-Публікація змін коду: без автоматичних CI запусків; runtime змінюється тільки явним `--apply` у SSH.
+Очікуване завершення: `FINANCE_SINGLE_PASSWORD_APPLIED: finance host only; other sites unchanged`. Після цього просто оновити браузер та ввести **раніше створений** пароль приватного кабінету. GitHub Actions, новий SHA чи повторний деплой не потрібні.
