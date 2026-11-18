@@ -6,10 +6,10 @@ const probe=readFileSync(new URL('./finance-gateway-real-offline-probe.py',impor
 const workflow=readFileSync(new URL('../.github/workflows/manual-finance-deploy.yml',import.meta.url),'utf8');
 test('manual finance workflow no longer invokes gateway offline probe',()=>{
  assert.match(workflow,/^  workflow_dispatch:/m);
- assert.match(workflow,/          - probe-gateway-offline/);
- assert.match(workflow,/if: inputs.operation == 'probe-gateway-offline'/);
- assert.match(workflow,/finance-gateway-real-offline-probe\.py/);
- assert.match(workflow,/8bf0f2b0a59909bbff3a667e7c025b192123acdc/);
+ assert.doesNotMatch(workflow,/          - probe-gateway-offline/);
+ assert.doesNotMatch(workflow,/if: inputs.operation == 'probe-gateway-offline'/);
+ assert.doesNotMatch(workflow,/finance-gateway-real-offline-probe\.py/);
+ assert.doesNotMatch(workflow,/8bf0f2b0a59909bbff3a667e7c025b192123acdc/);
  assert.doesNotMatch(workflow,/^  push:|^  schedule:/m);
 });
 test('offline probe has no route to DB/host, uses only preserved image, fails closed',()=>{
