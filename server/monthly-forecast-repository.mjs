@@ -75,7 +75,7 @@ export function createMonthlyForecastRepository(pool) {
       if(!Number.isSafeInteger(expectedAmountMinor)||expectedAmountMinor<=0
           ||!Number.isSafeInteger(amountMinor)||amountMinor<=0)throw Error('Invalid forecast amount');
       const validateDate=(value)=>{
-        if(typeof value!=='string'||!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)
+        if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)
             ||value.slice(0,7)!==targetMonth||Number.isNaN(Date.parse(value))
             ||new Date(value).toISOString().slice(0,10)!==value)throw Error('Invalid forecast date');
         return value;
