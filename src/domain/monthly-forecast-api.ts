@@ -31,7 +31,7 @@ export const confirmMonthlyForecast=(sourceMonth:string,targetMonth:string,selec
   sourceMonth,targetMonth,selectedIds,edits
  },fetcher);
 export function parseForecastMoney(text:string):number {
- if(!/^(?:0|[1-9]\\d{0,12})(?:[.,]\\d{1,2})?$/.test(text.trim()))throw Error('Введи додатну суму з точністю до копійок');
+ if(!/^(?:0|[1-9]\d{0,12})(?:[.,]\d{1,2})?$/.test(text.trim()))throw Error('Введи додатну суму з точністю до копійок');
  const [whole,part='']=text.trim().replace(',','.').split('.');
  const result=BigInt(whole)*100n+BigInt((part+'00').slice(0,2));
  if(result<=0n||result>BigInt(Number.MAX_SAFE_INTEGER))throw Error('Некоректна сума');
