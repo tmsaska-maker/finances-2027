@@ -30,6 +30,14 @@ export function makeServer(pool, token) {
           return send(400,{error:'Invalid forecast query'});
         return send(200,await forecast.list(url.searchParams.get('month')));
       }
+      if(req.method==='GET' && req.url?.startsWith('/forecast/monthly/history?')) {
+        const url=new URL(req.url,'http://localhost');
+        if(url.pathname!=='/forecast/monthly/history'
+            || [...url.searchParams.keys()].some(k=>k!=='id')
+            || url.searchParams.getAll('id').length!==1)
+          return send(400,{error:'Invalid forecast history query'});
+        return send(200,await forecast.history({id:url.searchParams.get('id')}));
+      }
       if(req.method==='GET' && req.url==='/obligations') return send(200,await repo.listObligations());
       if(req.method==='GET' && /^\/obligations\/[a-zA-Z0-9_-]{1,120}$/.test(req.url||'')) {
         const result=await repo.getObligation(req.url.slice('/obligations/'.length));
@@ -42,7 +50,8 @@ export function makeServer(pool, token) {
         '/payments':repo.addPayment,
         '/forecast/monthly/lines':forecast.create,
         '/forecast/monthly/preview':forecast.preview,
-        '/forecast/monthly/confirm':forecast.confirm
+        '/forecast/monthly/confirm':forecast.confirm,
+        '/forecast/monthly/revise':forecast.revise
       };
       if(req.method!=='POST' || !Object.hasOwn(routes,req.url||'')) return send(404,{error:'Not found'});
       let raw='';
@@ -54,6 +63,7 @@ export function makeServer(pool, token) {
       const result=await routes[req.url](value);
       return send(201,result);
     } catch(error) {
+      if(error.message==='Forecast changed since last read') return send(409,{error:'Forecast changed since last read'});
       if(error.code==='23505'||error.message==='Duplicate monthly forecast template') return send(409,{error:'Duplicate identifier/source'});
       if(error.code==='23503') return send(400,{error:'Referenced record not found'});
       if(error.code==='23514') return send(400,{error:'Database constraint failed'});
