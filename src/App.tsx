@@ -209,7 +209,7 @@ function FinanceDashboardApp({ privateLogout }: { privateLogout?: () => Promise<
   )?.label
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${privateFinanceMode ? "finance-private-mode" : ""}`}>
       <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">
