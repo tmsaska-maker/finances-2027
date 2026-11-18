@@ -12,7 +12,7 @@ function requireObject(value, name) {
   return value;
 }
 function requireId(value,name) {
-  if (typeof value!=='string'||!/^[-_a-zA-Z0-9]{1,120}$/.test(value))
+  if (typeof value!=='string'||!/^[-_a-zA-Z0-9:]{1,120}$/.test(value))
     throw Error('Invalid '+name);
   return value;
 }
