@@ -92,13 +92,16 @@ export function createFinanceBrowserGateway({publicOrigin,apiOrigin='http://127.
     const forecastGet=req.method==='GET' && url.pathname==='/finance-api/forecast/monthly' &&
       [...url.searchParams.keys()].every(k=>k==='month') && url.searchParams.getAll('month').length===1 &&
       /^\d{4}-(0[1-9]|1[0-2])$/.test(url.searchParams.get('month'));
+    const forecastHistoryGet=req.method==='GET' && url.pathname==='/finance-api/forecast/monthly/history' &&
+      [...url.searchParams.keys()].every(k=>k==='id') && url.searchParams.getAll('id').length===1 &&
+      /^[-_a-zA-Z0-9:]{1,120}$/.test(url.searchParams.get('id'));
     const forecastPost=req.method==='POST' && !url.search &&
-      ['/finance-api/forecast/monthly/lines','/finance-api/forecast/monthly/preview','/finance-api/forecast/monthly/confirm'].includes(url.pathname);
+      ['/finance-api/forecast/monthly/lines','/finance-api/forecast/monthly/preview','/finance-api/forecast/monthly/confirm','/finance-api/forecast/monthly/revise'].includes(url.pathname);
     const allowed=(req.method==='GET' && url.pathname==='/finance-api/obligations'&&!url.search) ||
       (req.method==='GET' && url.pathname==='/finance-api/categories' &&
         [...url.searchParams.keys()].every(k=>['project','type'].includes(k)) &&
         url.searchParams.getAll('project').length===1 &&
-        url.searchParams.getAll('type').length<=1) || forecastGet || forecastPost;
+        url.searchParams.getAll('type').length<=1) || forecastGet || forecastHistoryGet || forecastPost;
     if(!allowed)return response(res,req.method==='POST'?405:404,{error:'Unknown finance endpoint'});
     let payload;
     if(forecastPost) {
