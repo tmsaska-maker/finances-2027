@@ -117,7 +117,7 @@ export default function PrivateMonthlyPlanning({project,setProject,notify}:{
    <div className="heading-actions"><label>Місяць плану <input aria-label="Місяць плану" type="month" value={targetMonth} onChange={e=>setTargetMonth(e.target.value)}/></label></div>
   </div>
   <section className="finance-budget-first" aria-label="Послідовність фінансового планування">
-    <h2>Спочатку — річний бюджет {targetMonth.slice(0,4)}</h2>
+    <h2>Спочатку — річний бюджет</h2>
     <p>Основний порядок роботи: річний бюджет → розподіл по місяцях → уточнення місячних прогнозів і фактичні оплати. Річний бюджет не змінюється автоматично від щомісячних коригувань.</p>
     <ol>
       <li><strong>Річний бюджет:</strong> планові доходи, витрати й резерви за проєктами та категоріями.</li>
