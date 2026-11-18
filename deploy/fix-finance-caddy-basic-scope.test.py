@@ -35,7 +35,7 @@ class FinanceCaddyTests(unittest.TestCase):
         result = module.scoped_config(source)
         self.assertEqual(result.split("finances.screening40.com.ua {")[0],
                          source.split("finances.screening40.com.ua {")[0])
-        self.assertTrue(result.endswith(source.split("another.example.com {")[1].join(["another.example.com {", ""])))
+        self.assertTrue(result.endswith('another.example.com {\n    respond "untouched"\n}\n'))
         self.assertIn("owner $2a$dummy-unchanged", result)
         self.assertIn("@finance_ui_basic_only {", result)
         self.assertIn("not path /finance-api/*", result)
