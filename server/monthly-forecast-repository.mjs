@@ -69,6 +69,57 @@ export function createMonthlyForecastRepository(pool) {
         return {record:x};
       }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
     },
+    async revise({id,month:targetMonth,expectedAmountMinor,expectedDueDate,amountMinor,dueDate}) {
+      if(typeof id!=='string'||!ID.test(id))throw Error('Invalid forecast line ID');
+      month(targetMonth);
+      if(!Number.isSafeInteger(expectedAmountMinor)||expectedAmountMinor<=0
+          ||!Number.isSafeInteger(amountMinor)||amountMinor<=0)throw Error('Invalid forecast amount');
+      const validateDate=(value)=>{
+        if(typeof value!=='string'||!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)
+            ||value.slice(0,7)!==targetMonth||Number.isNaN(Date.parse(value))
+            ||new Date(value).toISOString().slice(0,10)!==value)throw Error('Invalid forecast date');
+        return value;
+      };
+      validateDate(expectedDueDate);validateDate(dueDate);
+      const client=await pool.connect();
+      try{
+        await client.query('BEGIN');
+        const found=await client.query(
+          `SELECT id,amount_minor::text AS amount_minor,due_date::text AS due_date
+           FROM monthly_forecast_lines WHERE id=$1 AND month=$2 AND status='draft' FOR UPDATE`,
+          [id,targetMonth]
+        );
+        if(!found.rowCount)throw Error('Unknown forecast line');
+        const previous=found.rows[0];
+        if(Number(previous.amount_minor)!==expectedAmountMinor||previous.due_date!==expectedDueDate)
+          throw Error('Forecast changed since last read');
+        if(amountMinor===expectedAmountMinor&&dueDate===expectedDueDate){
+          await client.query('COMMIT');
+          return {changed:false,record:(await readRows(pool,targetMonth)).find(x=>x.id===id)};
+        }
+        await client.query('UPDATE monthly_forecast_lines SET amount_minor=$2,due_date=$3 WHERE id=$1',
+          [id,amountMinor,dueDate]);
+        await client.query(
+          `INSERT INTO monthly_forecast_revisions(
+            forecast_line_id,old_amount_minor,new_amount_minor,old_due_date,new_due_date
+           ) VALUES($1,$2,$3,$4,$5)`,
+          [id,expectedAmountMinor,amountMinor,expectedDueDate,dueDate]
+        );
+        await client.query('COMMIT');
+        return {changed:true,record:(await readRows(pool,targetMonth)).find(x=>x.id===id)};
+      }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+    },
+    async history({id}) {
+      if(typeof id!=='string'||!ID.test(id))throw Error('Invalid forecast line ID');
+      const r=await pool.query(
+        `SELECT id,forecast_line_id AS "forecastLineId",
+          old_amount_minor::text AS "oldAmountMinor",new_amount_minor::text AS "newAmountMinor",
+          old_due_date::text AS "oldDueDate",new_due_date::text AS "newDueDate",
+          revised_at AS "revisedAt"
+         FROM monthly_forecast_revisions WHERE forecast_line_id=$1 ORDER BY id`,[id]
+      );
+      return {id,records:r.rows.map(x=>({...x,oldAmountMinor:Number(x.oldAmountMinor),newAmountMinor:Number(x.newAmountMinor)}))};
+    },
     async preview({sourceMonth,targetMonth}) {
       month(sourceMonth);month(targetMonth);
       const source=await readRows(pool,sourceMonth);
