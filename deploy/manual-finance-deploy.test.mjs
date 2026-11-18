@@ -11,52 +11,37 @@ test('manual finance deploy has no push/schedule trigger and requires main SHA',
   assert.match(wf,/github\.ref == 'refs\/heads\/main'/);
   assert.match(wf,/test "\$APPROVED_SHA" = "\$GITHUB_SHA"/);
 });
-test('restore drill, S3 and finance-only deployment gates are mandatory',()=>{
-  for(const key of ['FINANCES_LIGHTSAIL_INSTANCE_NAME','FINANCES_AWS_DEPLOY_ROLE_ARN','FINANCES_BACKUP_BUCKET','--sse AES256','restore test','backup.sha256','offsite-backup-verified.sha256','StrictHostKeyChecking=yes','--no-build --no-deps api']) {
-    assert.ok(wf.includes(key)||script.includes(key), 'Missing gate: '+key);
-  }
-  assert.match(script,/ROOT=\/opt\/finances-2027/);
-  assert.match(script,/APP="\$ROOT\/backend\/deploy"/);
-  assert.match(script,/test .+ = finances2027/);
-  assert.match(script,/\[\[ -s "\$MARKER" && -s "\$DUMP" \]\]/);
-  assert.doesNotMatch(script,/docker\s+compose\s+down/);
-  execFileSync('bash',['-n',new URL('./manual-finance-release.sh',import.meta.url).pathname]);
+test('single finance DB deploy applies 007/008 and never performs backup, restore or second DB',()=>{
+ assert.match(wf,/StrictHostKeyChecking=yes/);
+ assert.match(wf,/server\/sql\/00\{7,8\}_\*\.sql/);
+ assert.match(wf,/if: inputs.operation == 'deploy'/);
+ assert.match(script,/ROOT=\/opt\/finances-2027/);
+ assert.match(script,/APP="\$ROOT\/backend\/deploy"/);
+ assert.match(script,/finances2027/);
+ assert.match(script,/007_monthly_forecast/);
+ assert.match(script,/008_forecast_revision_audit/);
+ assert.match(script,/final_versions/);
+ assert.match(script,/--no-build --no-deps api/);
+ assert.match(script,/Forecast|forecast\/monthly/);
+ assert.match(script,/Unexpected forecast migration state; abort/);
+ for(const unsafe of ['pg_dump','pg_restore','createdb','dropdb','BACKUP_BUCKET','BACKUP_PREFIX','backup-export.dump','offsite-backup-verified.sha256','aws s3','Finance backup and isolated restore test']) {
+  assert.ok(!wf.includes(unsafe)&&!script.includes(unsafe),'Forbidden backup/clone operation: '+unsafe);
+ }
+ assert.doesNotMatch(wf,/snapshot-gateway|probe-gateway-offline|inspect-gateway-snapshot/);
+ assert.doesNotMatch(script,/docker\s+compose\s+down/);
+ execFileSync('bash',['-n',new URL('./manual-finance-release.sh',import.meta.url).pathname]);
 });
-
-test('shared existing S3 bucket is used with finance-only prefix and repo-scoped OIDC trust',()=>{
-  const trust=JSON.parse(readFileSync(new URL('../infra/aws/finance-github-oidc-trust.template.json',import.meta.url),'utf8'));
-  const permissions=JSON.parse(readFileSync(new URL('../infra/aws/finance-deploy-policy.template.json',import.meta.url),'utf8'));
-  assert.equal(trust.Statement[0].Condition.StringEquals['token.actions.githubusercontent.com:sub'],'repo:tmsaska-maker@258178043/finances-2027@1450410210:ref:refs/heads/main');
-  const objectPermissions=permissions.Statement.filter(s=>String(s.Resource).includes('/*'));
-  assert.ok(objectPermissions.length>=2);
-  assert.ok(objectPermissions.every(s=>s.Resource === 'arn:aws:s3:::screening40-staging-backups/finance/postgresql/*'));
-  assert.match(wf,/BACKUP_PREFIX: finance\/postgresql/);
-  assert.match(wf,/OBJECT_KEY="\$BACKUP_PREFIX\//);
-  assert.doesNotMatch(wf,/\.Value == "Finances2027"/);
+test('finance API Docker image includes forecast runtime modules',()=>{
+ const docker=readFileSync(new URL('../server/Dockerfile',import.meta.url),'utf8');
+ assert.ok(docker.includes("COPY main.mjs http.mjs repository.mjs validation.mjs monthly-planning.mjs monthly-forecast-repository.mjs"));
+ assert.doesNotMatch(docker,/COPY\\s+\\.\\s+\\./);
 });
-
-test('finance deploy S3 permissions cannot write screening backups',()=>{
-  const policy=JSON.parse(readFileSync(new URL('../infra/aws/finance-s3-backup-inline-policy.json',import.meta.url),'utf8'));
-  const statements=policy.Statement;
-  assert.equal(statements.length,3);
-  for(const s of statements.filter(v=>String(v.Resource).includes('/*'))) {
-    assert.equal(s.Resource,'arn:aws:s3:::screening40-staging-backups/finance/postgresql/*');
-  }
-  assert.ok(statements.find(v=>v.Action==='s3:PutObject').Condition.StringEquals['s3:x-amz-server-side-encryption']==='AES256');
-  assert.match(wf,/--metadata "sha256=\$EXPECTED"/);
-  assert.match(wf,/\.Metadata\.sha256 == \$sha/);
-  assert.match(script,/rm -f -- "\$DUMP"/);
-  assert.ok(script.lastIndexOf('rm -f -- "$DUMP"')>script.indexOf('Finance API smoke PASS'));
+test('existing finance stack is reused; no gateway/Caddy/Screening40 writes in release',()=>{
+ assert.match(script,/docker compose --env-file "\$APP\/\.env" -f "\$APP\/compose\.yaml" -f "\$override" up -d --no-build --no-deps api/);
+ assert.doesNotMatch(script,/docker\s+(?:volume\s+create|run|compose\s+down)|systemctl|caddy\s+reload|postgres\s+-D/);
+ assert.match(wf,/github\.ref == 'refs\/heads\/main'/);
+ assert.match(wf,/test "\$APPROVED_SHA" = "\$GITHUB_SHA"/);
 });
-
-test('backup verification checksum is SSH-readable but finance dump stays private',()=>{
-  assert.match(script,/chown "\$\{SUDO_USER:\?SUDO_USER required\}" "\$STAGE\/backup\.sha256"/);
-  assert.match(script,/chmod 600 "\$STAGE\/backup\.sha256"/);
-  assert.ok(script.indexOf('chown "${SUDO_USER:?SUDO_USER required}" "$STAGE/backup.sha256"') >
-    script.indexOf('sha256sum "$DUMP" > "$STAGE/backup.sha256"'));
-  assert.match(script,/chown "\$SUDO_USER" "\$STAGE\/backup-export\.dump"/);
-});
-
 test('live finance audit is manual, counts-only, and refuses writes',()=>{
   const audit=readFileSync(new URL('./finance-live-readonly-audit.sh',import.meta.url),'utf8');
   assert.match(wf,/          - audit/);

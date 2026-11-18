@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "Read-only preflight, private counts-only audit, or finance-only backup + deploy"
+        description: "Read-only preflight/audit or finance-only migrations 007/008 + API (no backups)"
         required: true
         type: choice
         default: preflight
@@ -12,9 +12,6 @@ on:
           - preflight
           - audit
           - inspect-edge
-          - snapshot-gateway
-          - probe-gateway-offline
-          - inspect-gateway-snapshot
           - deploy
       approved_sha:
         description: "For deploy: exact 40-character main SHA; empty for preflight"
@@ -102,8 +99,6 @@ jobs:
       AWS_REGION: eu-central-1
       INSTANCE_NAME: ${{ vars.FINANCES_LIGHTSAIL_INSTANCE_NAME }}
       ROLE_ARN: ${{ vars.FINANCES_AWS_DEPLOY_ROLE_ARN }}
-      BACKUP_BUCKET: ${{ vars.FINANCES_BACKUP_BUCKET }}
-      BACKUP_PREFIX: finance/postgresql
       OPERATION: ${{ inputs.operation }}
     steps:
       - name: Check deployment configuration
@@ -111,9 +106,6 @@ jobs:
         run: |
           test -n "$INSTANCE_NAME" || { echo "Missing FINANCES_LIGHTSAIL_INSTANCE_NAME"; exit 1; }
           test -n "$ROLE_ARN" || { echo "Missing FINANCES_AWS_DEPLOY_ROLE_ARN"; exit 1; }
-          if [[ "$OPERATION" == deploy ]]; then
-            test -n "$BACKUP_BUCKET" || { echo "Missing FINANCES_BACKUP_BUCKET"; exit 1; }
-          fi
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -128,19 +120,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.ROLE_ARN }}
           role-duration-seconds: 1800
-      - name: Validate finance-only private off-host backup storage
-        if: inputs.operation == 'deploy'
-        run: |
-          test "$(aws s3api get-bucket-versioning --bucket "$BACKUP_BUCKET" --query Status --output text)" = Enabled
-          aws s3api get-public-access-block --bucket "$BACKUP_BUCKET" --output json | jq -e '
-            .PublicAccessBlockConfiguration | .BlockPublicAcls and .IgnorePublicAcls and .BlockPublicPolicy and .RestrictPublicBuckets
-          ' >/dev/null
-          aws s3api get-bucket-encryption --bucket "$BACKUP_BUCKET" --output json | jq -e '
-            any(.ServerSideEncryptionConfiguration.Rules[]; .ApplyServerSideEncryptionByDefault.SSEAlgorithm == "AES256")
-          ' >/dev/null
-          # Shared bucket is permitted; IAM role must restrict finance writes to BACKUP_PREFIX.
-          test "$BACKUP_PREFIX" = "finance/postgresql"
-          echo "Using existing protected S3 bucket with isolated finance prefix."
       - name: Open temporary SSH access for this runner only
         id: ssh_open
         shell: bash
@@ -180,17 +159,8 @@ jobs:
           if [[ "$OPERATION" == inspect-edge ]]; then
             scp "${SSH_OPTS[@]}" deploy/finance-edge-readonly-inspect.sh "$SSH_USER@$SSH_IP:$STAGE/finance-edge-readonly-inspect.sh"
           fi
-          if [[ "$OPERATION" == snapshot-gateway ]]; then
-            scp "${SSH_OPTS[@]}" deploy/finance-gateway-rollback-snapshot.py "$SSH_USER@$SSH_IP:$STAGE/finance-gateway-rollback-snapshot.py"
-          fi
-          if [[ "$OPERATION" == probe-gateway-offline ]]; then
-            scp "${SSH_OPTS[@]}" deploy/finance-gateway-real-offline-probe.py "$SSH_USER@$SSH_IP:$STAGE/finance-gateway-real-offline-probe.py"
-          fi
-          if [[ "$OPERATION" == inspect-gateway-snapshot ]]; then
-            scp "${SSH_OPTS[@]}" deploy/finance-gateway-static-snapshot-audit.py deploy/gateway-static-startup-contract.py deploy/gateway-saved-startup-delta.py deploy/gateway-image-source-signals.py deploy/gateway-entrypoint-source-audit.py deploy/gateway-startup-command-shape.py "$SSH_USER@$SSH_IP:$STAGE/"
-          fi
           if [[ "$OPERATION" == deploy ]]; then
-            scp "${SSH_OPTS[@]}" server/sql/00{3,4,5,6}_*.sql "$SSH_USER@$SSH_IP:$STAGE/sql/"
+            scp "${SSH_OPTS[@]}" server/sql/00{7,8}_*.sql "$SSH_USER@$SSH_IP:$STAGE/sql/"
             scp "${SSH_OPTS[@]}" "finances-api-${GITHUB_SHA}.tar.gz" "$SSH_USER@$SSH_IP:$STAGE/"
           fi
       - name: Finance-only read-only preflight
@@ -212,53 +182,6 @@ jobs:
           SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
           ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/finance-edge-readonly-inspect.sh'"
 
-      - name: Snapshot original finance gateway image and verify Docker create without starting it
-        if: inputs.operation == 'snapshot-gateway'
-        shell: bash
-        run: |
-          set -euo pipefail
-          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
-          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo python3 '/tmp/finances2027-${GITHUB_SHA}/finance-gateway-rollback-snapshot.py' '${GITHUB_SHA}'"
-          echo "Finance gateway private rollback snapshot and no-start image create check executed. Production runtime rollback NOT verified." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Probe original saved gateway image offline with synthetic inputs (NO LIVE CUTOVER)
-        if: inputs.operation == 'probe-gateway-offline'
-        shell: bash
-        run: |
-          set -euo pipefail
-          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
-          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo python3 '/tmp/finances2027-${GITHUB_SHA}/finance-gateway-real-offline-probe.py' '8bf0f2b0a59909bbff3a667e7c025b192123acdc'"
-          echo "Real old gateway offline startup probe finished. No live cutover or production rollback proof." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Inspect pinned old gateway snapshot metadata only (NO DOCKER / NO CUTOVER)
-        if: inputs.operation == 'inspect-gateway-snapshot'
-        shell: bash
-        run: |
-          set -euo pipefail
-          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
-          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo python3 '/tmp/finances2027-${GITHUB_SHA}/finance-gateway-static-snapshot-audit.py' '8bf0f2b0a59909bbff3a667e7c025b192123acdc'"
-          echo "Pinned gateway snapshot metadata-only check executed; production rollback NOT verified." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Finance backup and isolated restore test
-        if: inputs.operation == 'deploy'
-        shell: bash
-        run: |
-          set -euo pipefail
-          SSH_OPTS=(-i "$RUNNER_TEMP/finance-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
-          ssh "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP" "sudo bash '/tmp/finances2027-${GITHUB_SHA}/manual-finance-release.sh' '${GITHUB_SHA}' backup"
-          scp "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP:/tmp/finances2027-${GITHUB_SHA}/backup-export.dump" "$RUNNER_TEMP/finances-backup.dump"
-          scp "${SSH_OPTS[@]}" "$SSH_USER@$SSH_IP:/tmp/finances2027-${GITHUB_SHA}/backup.sha256" "$RUNNER_TEMP/backup.sha256"
-          EXPECTED="$(cut -d ' ' -f1 "$RUNNER_TEMP/backup.sha256")"
-          ACTUAL="$(sha256sum "$RUNNER_TEMP/finances-backup.dump" | cut -d ' ' -f1)"
-          test "$ACTUAL" = "$EXPECTED"
-          OBJECT_KEY="$BACKUP_PREFIX/${GITHUB_SHA}/${GITHUB_RUN_ID}.dump"
-          aws s3 cp "$RUNNER_TEMP/finances-backup.dump" "s3://$BACKUP_BUCKET/$OBJECT_KEY" --sse AES256 --metadata "sha256=$EXPECTED" --only-show-errors
-          aws s3api head-object --bucket "$BACKUP_BUCKET" --key "$OBJECT_KEY" --output json | jq -e --arg sha "$EXPECTED" '
-            .ContentLength > 0 and .ServerSideEncryption == "AES256" and .Metadata.sha256 == $sha
-          ' >/dev/null
-          printf '%s\n' "$EXPECTED" > "$RUNNER_TEMP/offsite-backup-verified.sha256"
-          scp "${SSH_OPTS[@]}" "$RUNNER_TEMP/offsite-backup-verified.sha256" "$SSH_USER@$SSH_IP:/tmp/finances2027-${GITHUB_SHA}/"
-          echo "Finance backup: off-host S3 verified (object key hidden from ordinary logs)" >> "$GITHUB_STEP_SUMMARY"
       - name: Deploy only finance SQL migrations and API
         if: inputs.operation == 'deploy'
         shell: bash
@@ -278,4 +201,4 @@ jobs:
             PORT_INFO="$(jq -nc --arg cidr "$RUNNER_CIDR" '{fromPort:22,toPort:22,protocol:"tcp",cidrs:[$cidr]}')"
             aws lightsail close-instance-public-ports --region "$AWS_REGION" --instance-name "$INSTANCE_NAME" --port-info "$PORT_INFO" >/dev/null || true
           fi
-          rm -f "$RUNNER_TEMP/finances-backup.dump" "$RUNNER_TEMP/backup.sha256" "$RUNNER_TEMP/offsite-backup-verified.sha256" "$RUNNER_TEMP/finance-key" "$RUNNER_TEMP/finance-key-cert.pub" "$RUNNER_TEMP/known_hosts" "$RUNNER_TEMP/access.json"
+          rm -f "$RUNNER_TEMP/finance-key" "$RUNNER_TEMP/finance-key-cert.pub" "$RUNNER_TEMP/known_hosts" "$RUNNER_TEMP/access.json"
