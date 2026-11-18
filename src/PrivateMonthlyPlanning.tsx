@@ -112,10 +112,20 @@ export default function PrivateMonthlyPlanning({project,setProject,notify}:{
  return <>
   <div className="page-heading">
    <div><div className="eyebrow">Планування · {project} · {targetMonth}</div>
-    <h1>Створити платіжний план</h1>
+    <h1>Планування бюджету та платежів</h1>
     <p>Переносимо повторювані прогнозні витрати пакетом, без дублювання боргів</p></div>
    <div className="heading-actions"><label>Місяць плану <input aria-label="Місяць плану" type="month" value={targetMonth} onChange={e=>setTargetMonth(e.target.value)}/></label></div>
   </div>
+  <section className="finance-budget-first" aria-label="Послідовність фінансового планування">
+    <h2>Спочатку — річний бюджет {targetMonth.slice(0,4)}</h2>
+    <p>Основний порядок роботи: річний бюджет → розподіл по місяцях → уточнення місячних прогнозів і фактичні оплати. Річний бюджет не змінюється автоматично від щомісячних коригувань.</p>
+    <ol>
+      <li><strong>Річний бюджет:</strong> планові доходи, витрати й резерви за проєктами та категоріями.</li>
+      <li><strong>Місячний платіжний план:</strong> календар на основі затвердженого бюджету, з урахуванням зобов’язань без їх дублювання.</li>
+      <li><strong>Прогноз і факт:</strong> коригування очікуваних платежів, звірка з банком та пояснення відхилень.</li>
+    </ol>
+    <p><strong>Стан розробки:</strong> річний бюджет ще не підключений до PostgreSQL. Нижче доступний існуючий модуль місячного прогнозу; його не слід вважати затвердженим бюджетом.</p>
+  </section>
   <div className="stepper">
    <span className={step===1?"active":""}><i>1</i>Основа плану</span><b/>
    <span className={step===2?"active":""}><i>2</i>Редагування</span><b/>
@@ -125,12 +135,15 @@ export default function PrivateMonthlyPlanning({project,setProject,notify}:{
   {busy&&<div className="expenses-notice" role="status">Виконується запит до PostgreSQL…</div>}
   {error&&<div className="expenses-notice" role="alert">{error}. Демодані не підставляємо.</div>}
   <div className="template-grid">
+   <button className="template" type="button" disabled aria-label="З річного бюджету — у розробці">
+    <strong>З річного бюджету · основний шлях</strong>
+    <p>Після підключення затвердженого бюджету формуватиме місячний план. Поки що недоступно.</p>
+    <small>Наступний етап</small>
+   </button>
    <button className="template selected" type="button" disabled={busy} onClick={begin}>
     <span className="radio"/><strong>На основі {sourceMonth}</strong>
-    <p>Пакетне перенесення регулярних платежів</p><small>Рекомендовано</small>
-   </button>
-   <button className="template" type="button" disabled>
-    <strong>З річного бюджету</strong><p>Буде доступно після підключення BUDGET snapshot</p>
+    <p>Тимчасовий режим: перенесення регулярних прогнозних платежів попереднього місяця.</p>
+    <small>Діє зараз</small>
    </button>
    <button className="template" type="button" disabled={busy} onClick={()=>{setSeed(!seed);setCategory("")}}>
     <strong>Додати повторювану основу</strong><p>Перший запис у {sourceMonth}, якщо ще нема що переносити</p>
